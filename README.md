@@ -8,49 +8,65 @@ Tool CLI quét codebase .NET và sinh ra file tĩnh (`.md`, `.jsonl`) để **đ
 
 ---
 
-## Phần 1 — Cài đặt (làm 1 lần)
+## Phần 1 — Cài đặt (làm 1 lần, máy nào cũng làm y hệt)
 
 ### Cần có sẵn
 
 | Thứ | Bắt buộc? | Dùng để làm gì |
 |---|---|---|
 | **.NET 8 SDK** | ✅ Bắt buộc | Build và chạy tool |
-| **git** | Nên có | Lấy lịch sử ticket, cảnh báo index cũ |
+| **git** | ✅ Bắt buộc | Clone repo này, và lấy lịch sử ticket/cảnh báo index cũ khi dùng tool |
 | **node + npm** | Chỉ khi quét frontend | Đọc lời gọi API trong file Angular/TypeScript |
 
 Kiểm tra nhanh:
 
 ```bash
 dotnet --version
+git --version
 ```
 
-### Build tool
+### Lấy source code
 
 ```bash
-cd D:\Work\Projects\Tool
+git clone https://github.com/huytt-it/codemap-dotnet.git
+cd codemap-dotnet
 ```
+
+Từ đây, `<đường-dẫn-repo>` trong tài liệu này nghĩa là thư mục bạn vừa clone vào (đường dẫn đầy đủ, ví dụ `D:\Work\codemap-dotnet` — máy mỗi người mỗi khác, đừng copy nguyên văn ví dụ).
+
+### Build tool
 
 ```bash
 dotnet build CodeMap.Cli -c Release
 ```
 
-Xong. File chạy nằm ở `CodeMap.Cli\bin\Release\net8.0\CodeMap.Cli.dll`.
+Xong. File chạy nằm ở `CodeMap.Cli\bin\Release\net8.0\CodeMap.Cli.dll` (tính từ `<đường-dẫn-repo>`).
+
+### Kiểm tra build đúng (khuyến khích cho máy mới)
+
+```bash
+dotnet test tests/CodeMap.Tests
+```
+
+Toàn bộ test phải pass. Nếu đỏ ngay từ máy mới clone, khả năng cao là thiếu .NET 8 SDK hoặc phiên bản SDK không khớp — kiểm tra lại `dotnet --version` trước khi báo lỗi.
 
 ### Đặt lệnh tắt cho gọn (khuyến khích)
 
-Gõ `dotnet D:\Work\...\CodeMap.Cli.dll` mỗi lần rất dài. Tạo alias trong PowerShell profile:
+Gõ `dotnet <đường-dẫn-repo>\CodeMap.Cli\bin\Release\net8.0\CodeMap.Cli.dll` mỗi lần rất dài. Tạo alias trong PowerShell profile:
 
 ```bash
 notepad $PROFILE
 ```
 
-Thêm dòng này vào file vừa mở, rồi lưu và mở lại terminal:
+Thêm dòng này vào file vừa mở — **thay `<đường-dẫn-repo>` bằng đường dẫn thật trên máy bạn** — rồi lưu và mở lại terminal:
 
 ```powershell
-function codemap { dotnet "D:\Work\Projects\Tool\CodeMap.Cli\bin\Release\net8.0\CodeMap.Cli.dll" @args }
+function codemap { dotnet "<đường-dẫn-repo>\CodeMap.Cli\bin\Release\net8.0\CodeMap.Cli.dll" @args }
 ```
 
-Từ đây tài liệu này viết `codemap <lệnh>` cho ngắn. Nếu bạn không tạo alias, thay `codemap` bằng `dotnet "D:\Work\Projects\Tool\CodeMap.Cli\bin\Release\net8.0\CodeMap.Cli.dll"`.
+Từ đây tài liệu này viết `codemap <lệnh>` cho ngắn. Nếu bạn không tạo alias, thay `codemap` bằng `dotnet "<đường-dẫn-repo>\CodeMap.Cli\bin\Release\net8.0\CodeMap.Cli.dll"`.
+
+Đổi máy khác (hoặc đồng nghiệp clone lại) thì làm lại từ đầu Phần 1 — không có bước nào phụ thuộc vào máy cũ.
 
 ---
 
@@ -162,7 +178,7 @@ Thấy con số lớn thì quét lại. Chạy lại đúng các lệnh ở [Ph�
 
 > Ghi chú tay của bạn trong `MAP.md` (phần giữa `<!-- human:start -->` và `<!-- human:end -->`) **luôn được giữ lại** khi quét lại. Cứ ghi chú thoải mái vào đó.
 
-Muốn tự động quét mỗi đêm (hiện **đang tắt**, đang chạy tay): xem [docs/OPS-NIGHTLY-SCAN.md](docs/OPS-NIGHTLY-SCAN.md).
+Muốn tự động quét mỗi đêm (hiện **đang tắt**, đang chạy tay): xem `docs/OPS-NIGHTLY-SCAN.md` — tài liệu nội bộ, không có trong repo public (xem ghi chú ở mục "Tài liệu thêm" cuối trang).
 
 ---
 
@@ -193,16 +209,18 @@ Tạo file `codemap.config.json` ở **gốc repo** nếu cần. Không có file
 | `scan` báo project bị "degraded" | Bình thường — project đó không build được, tool tự hạ xuống mức quét nông và **vẫn chạy tiếp**. Xem lý do trong `index\diagnostics.json`. |
 | `impact` trả về 0 entry point | Tăng `--depth` (mặc định 5). Hoặc method đó thật sự không ai gọi. Hoặc entry point là dạng tool chưa nhận diện được (xem [FEATURES.md](docs/FEATURES.md) phần giới hạn). |
 | `slice` báo "Could not re-locate this symbol" | Symbol đã bị đổi tên/xóa sau lần quét. Quét lại rồi `find` lại để lấy mã mới. |
-| `where` không ra gì | Tool báo rõ là "không tìm thấy", không đoán bừa. Thử `find` với từ khóa tiếng Anh thay vì mô tả nghiệp vụ. |
+| `where` không ra gì | Tool báo rõ là "không tìm thấy", không đoán bừa. Thử lại bằng đúng ngôn ngữ team viết commit/ticket (tín hiệu mạnh nhất của `where` là khớp message ticket cũ), hoặc thử `find` với từ khóa tiếng Anh nếu đã đoán được tên symbol. |
 | `scan-fe` báo "typescript package not found" | Chạy `npm install` trong thư mục frontend trước. |
 
 **Nguyên tắc chung của tool:** chỗ nào không phân tích được thì ghi vào `diagnostics.json` và mục "Blind spots" trong report — **không bao giờ đoán bừa rồi im lặng**. Nếu report nói không biết, tức là thật sự không biết, đừng bỏ qua.
 
 ---
 
+## Cho AI agent đọc (GitHub Copilot, Claude...)
+
+[docs/copilot-instructions.md](docs/copilot-instructions.md) là bản hướng dẫn đầy đủ cho AI: quy trình hỏi-đáp, cách đọc report, ngôn ngữ nào dùng cho `where`, các điều cấm. Copy file này vào `.github/copilot-instructions.md` **trong repo bạn đang quét** (không phải repo `codemap-dotnet` này) để agent tự đọc mỗi session.
+
 ## Tài liệu thêm
 
 - [docs/FEATURES.md](docs/FEATURES.md) — tool làm được gì, **không** làm được gì (nên đọc trước khi tin kết quả)
-- [docs/CODEMAP-SPEC.md](docs/CODEMAP-SPEC.md) — spec thiết kế đầy đủ
-- [docs/OPS-NIGHTLY-SCAN.md](docs/OPS-NIGHTLY-SCAN.md) — chạy tự động hằng đêm (hiện đang tắt)
-- `docs/TEST-REPORT-PHASE*.md` — báo cáo test từng giai đoạn phát triển
+- `docs/CODEMAP-SPEC.md`, `docs/OPS-NIGHTLY-SCAN.md`, `docs/TEST-REPORT-PHASE*.md` — tài liệu nội bộ (spec thiết kế, vận hành quét đêm, báo cáo test từng giai đoạn). **Không có trong repo public** — chỉ tồn tại trong bản làm việc gốc, chưa được đẩy lên git.
