@@ -20,7 +20,7 @@ public class MapGeneratorTests
             new("M:Api.OrdersController.Delete(System.Int32)", "http", "DELETE", "api/orders/{id}"),
             new("M:Jobs.NightlyJob.ExecuteAsync(System.Threading.CancellationToken)", "job"),
         };
-        var frontendCalls = new List<FrontendCall> { new("fe:x.ts:1", "x.ts", 1, "DELETE", "'/x'", "api/orders/{*}", "orders", "high") };
+        var frontendCalls = new List<FrontendCall> { new("fe:x.ts:1", "x.ts", 1, "DELETE", "'/x'", "api/orders/{*}", "orders", "high", new()) };
         var apiLinks = new List<ApiLink> { new("fe:x.ts:1", "M:Api.OrdersController.Delete(System.Int32)", "exact") };
 
         var generator = new MapGenerator(symbols, new List<EdgeRecord>(), diagnostics: null, entryPoints: entryPoints, frontendCalls: frontendCalls, apiLinks: apiLinks);

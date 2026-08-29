@@ -13,8 +13,8 @@ public sealed record ReachedEntryPoint(string Id, string DisplayName, string Typ
 /// <summary>A non-entry-point, non-test caller reached by the traversal — only rendered when --full is passed (spec section 7, "chống nổ report"). See ReachedEntryPoint for IsConfirmedBinding.</summary>
 public sealed record CallerNode(string Id, string DisplayName, string Project, int Depth, bool IsConfirmedBinding = true);
 
-/// <summary>An FE screen (spec section 6's `feature`) reached via an api-links.jsonl match onto one of the traversal's reached http entry points.</summary>
-public sealed record ReachedScreen(string Feature, string FrontendFile, int FrontendLine, string HttpMethod, string Route, string Confidence, string MatchKind, string BackendEntryPointId);
+/// <summary>An FE screen (spec section 6's `feature`) reached via an api-links.jsonl match onto one of the traversal's reached http entry points. InjectedByComponents: components that inject the service this call lives in — the actual screen a user sees, when resolvable; empty means the call's containing file (FrontendFile) IS the closest thing to a screen we have (a component's own file, or an unresolved service).</summary>
+public sealed record ReachedScreen(string Feature, string FrontendFile, int FrontendLine, string HttpMethod, string Route, string Confidence, string MatchKind, string BackendEntryPointId, List<string> InjectedByComponents);
 
 /// <summary>
 /// Pure data produced by ImpactEngine.Traverse — spec section 7: "ImpactEngine.Traverse(symbolId, depth) trả về

@@ -132,12 +132,18 @@ public static class EvidenceRenderer
             foreach (var s in group)
             {
                 var confidenceNote = s.Confidence == "low" ? " (low confidence)" : "";
-                sb.AppendLine($"- {s.HttpMethod} {s.Route} — {s.FrontendFile}:{s.FrontendLine}{confidenceNote}");
+                sb.AppendLine($"- {s.HttpMethod} {s.Route} — {ScreenLocation(s)}{confidenceNote}");
             }
         }
 
         sb.AppendLine();
     }
+
+    /// <summary>Task "nối FE thiếu 1 hop": a service's file isn't what a user sees — the component(s) that inject it are. See CompactRenderer's copy of this same helper (kept independent — each renderer only reads ImpactResult, no shared rendering-layer dependency between the two).</summary>
+    private static string ScreenLocation(ReachedScreen s) =>
+        s.InjectedByComponents.Count > 0
+            ? $"{string.Join(", ", s.InjectedByComponents)}  (service: {s.FrontendFile}:{s.FrontendLine})"
+            : $"{s.FrontendFile}:{s.FrontendLine}";
 
     private static void AppendTickets(StringBuilder sb, ImpactResult result)
     {

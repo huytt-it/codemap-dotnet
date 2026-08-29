@@ -143,7 +143,7 @@ public static class ImpactEngine
             foreach (var link in links)
             {
                 if (!index.FrontendCallsById.TryGetValue(link.FrontendId, out var call)) continue;
-                screens.Add(new ReachedScreen(call.Feature, call.File, call.Line, call.HttpMethod, call.Route, call.Confidence, link.MatchKind, ep.Id));
+                screens.Add(new ReachedScreen(call.Feature, call.File, call.Line, call.HttpMethod, call.Route, call.Confidence, link.MatchKind, ep.Id, call.InjectedBy));
             }
         }
 

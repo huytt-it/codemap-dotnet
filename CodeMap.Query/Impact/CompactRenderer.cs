@@ -146,13 +146,19 @@ public static class CompactRenderer
                 {
                     var confidenceNote = s.Confidence == "low" ? " (low confidence)" : "";
                     var matchNote = s.MatchKind == "ambiguous" ? " (ambiguous match)" : "";
-                    sb.AppendLine($"- {s.HttpMethod} {s.Route} — {s.FrontendFile}:{s.FrontendLine}{confidenceNote}{matchNote}");
+                    sb.AppendLine($"- {s.HttpMethod} {s.Route} — {ScreenLocation(s)}{confidenceNote}{matchNote}");
                 }
             }
         }
 
         sb.AppendLine();
     }
+
+    /// <summary>Task "nối FE thiếu 1 hop": a service's file isn't what a user sees — the component(s) that inject it are. Falls back to the raw file:line when InjectedByComponents is empty (either the call is already inside a component — that file IS the screen — or scan-fe genuinely couldn't resolve it, noted separately in diagnostics.json).</summary>
+    private static string ScreenLocation(ReachedScreen s) =>
+        s.InjectedByComponents.Count > 0
+            ? $"{string.Join(", ", s.InjectedByComponents)}  (service: {s.FrontendFile}:{s.FrontendLine})"
+            : $"{s.FrontendFile}:{s.FrontendLine}";
 
     private static void AppendTests(StringBuilder sb, ImpactResult result)
     {

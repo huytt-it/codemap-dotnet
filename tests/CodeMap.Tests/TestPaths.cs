@@ -6,6 +6,7 @@ internal static class TestPaths
     public static string RepoRoot { get; } = FindRepoRoot();
     public static string FixtureSolution { get; } = Path.Combine(RepoRoot, "tests", "Fixtures", "SampleSolution", "SampleSolution.sln");
     public static string FixtureFrontend { get; } = Path.Combine(RepoRoot, "tests", "Fixtures", "SampleFrontend");
+    public static string FixtureFrontendWithService { get; } = Path.Combine(RepoRoot, "tests", "Fixtures", "SampleFrontendWithService");
 
     private static string FindRepoRoot()
     {

@@ -76,7 +76,7 @@ public class WhereEngineTests
         var index = BuildIndex(
             symbols: new[] { ("M:Api.OrdersController.Delete", "Delete", "Api.OrdersController", "OrdersController.cs") },
             entryPoints: new[] { new EntryPoint("M:Api.OrdersController.Delete", "http", "DELETE", "api/orders/{id}") },
-            frontendCalls: new[] { new FrontendCall("fe:x.ts:1", "x.ts", 1, "DELETE", "'/x'", "api/orders/{*}", "orders", "high") },
+            frontendCalls: new[] { new FrontendCall("fe:x.ts:1", "x.ts", 1, "DELETE", "'/x'", "api/orders/{*}", "orders", "high", new()) },
             apiLinks: new[] { new ApiLink("fe:x.ts:1", "M:Api.OrdersController.Delete", "exact") });
 
         var results = WhereEngine.Search(index, "orders");

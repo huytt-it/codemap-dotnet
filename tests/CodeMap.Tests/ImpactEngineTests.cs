@@ -132,7 +132,7 @@ public class ImpactEngineTests
             edges: new[] { ("T:Ctrl", "T:A") },
             entryPoints: new[] { "T:Ctrl" },
             entryPointType: "http",
-            frontendCalls: new[] { new FrontendCall("fe:x.ts:1", "x.ts", 1, "GET", "'/api/a'", "api/a", "orders", "high") },
+            frontendCalls: new[] { new FrontendCall("fe:x.ts:1", "x.ts", 1, "GET", "'/api/a'", "api/a", "orders", "high", new()) },
             apiLinks: new[] { new ApiLink("fe:x.ts:1", "T:Ctrl", "exact") });
 
         var result = ImpactEngine.Traverse(index, "T:A", depth: 5);
@@ -149,7 +149,7 @@ public class ImpactEngineTests
             edges: new[] { ("T:Ctrl", "T:A") },
             entryPoints: new[] { "T:Ctrl" },
             entryPointType: "http",
-            frontendCalls: new[] { new FrontendCall("fe:x.js:1", "x.js", 1, "GET", "'/api/a'", "api/a", "legacy", "low") },
+            frontendCalls: new[] { new FrontendCall("fe:x.js:1", "x.js", 1, "GET", "'/api/a'", "api/a", "legacy", "low", new()) },
             apiLinks: new[] { new ApiLink("fe:x.js:1", "T:Ctrl", "exact") });
 
         var result = ImpactEngine.Traverse(index, "T:A", depth: 5);

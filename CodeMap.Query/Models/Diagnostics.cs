@@ -15,6 +15,7 @@ public sealed class DiagnosticsModel
     public List<UnparsedFrontendUrl> UnparsedFrontendUrls { get; init; } = new();
     public List<UnmatchedFrontendCall> UnmatchedFrontendCalls { get; init; } = new();
     public List<string> UnreferencedEndpoints { get; init; } = new();
+    public List<UnresolvedFrontendInjection> UnresolvedFrontendInjections { get; init; } = new();
 }
 
 public sealed record DegradedProject(string Project, string Reason);
@@ -42,3 +43,6 @@ public sealed record UnparsedFrontendUrl(string File, int Line, string HttpMetho
 
 /// <summary>`link` found no backend endpoint whose (httpMethod, normalized route) matches this frontend call — spec section 6: "Danh sách này tự nó có giá trị: nó là endpoint chết hoặc là chỗ tool parse sai".</summary>
 public sealed record UnmatchedFrontendCall(string FrontendId, string HttpMethod, string NormalizedRoute);
+
+/// <summary>`scan-fe` found an Angular HTTP call inside a service class, but no component's constructor directly injects that service — only one level of DI resolution is attempted (a service injected into another service, or a module-level provider, is not traced further).</summary>
+public sealed record UnresolvedFrontendInjection(string FrontendCallId, string ServiceFile, int ServiceLine, string Reason);

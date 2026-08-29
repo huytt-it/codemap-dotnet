@@ -109,6 +109,33 @@ public class ScanGitTests
         Assert.AreEqual("fix #4821 hủy đơn hàng khi khách đã thanh toán", ticket.Message);
     }
 
+    [TestMethod] // Review Fix Pass v1, Task 4: broader coverage than a single message — 5 commits, spread across all 6 Vietnamese tone marks and the đ/ơ/ư/ă/â/ê letters, each in its own ticket so a partial-mojibake bug affecting only some byte sequences wouldn't slip through
+    public void Five_vietnamese_commit_messages_with_diverse_diacritics_all_round_trip_correctly()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        var messages = new[]
+        {
+            "fix #201 hủy đơn hàng khi khách đã thanh toán",
+            "fix #202 sửa lỗi hiển thị giỏ hàng trống",
+            "fix #203 cập nhật số lượng tồn kho không chính xác",
+            "fix #204 thêm chức năng xuất hóa đơn PDF",
+            "fix #205 khắc phục lỗi đăng nhập bằng tài khoản Google",
+        };
+        for (var i = 0; i < messages.Length; i++)
+            GitFixtureHelper.Commit(repo, messages[i], ($"File{i}.cs", "class X {}"));
+
+        var outDir = RunScanGit(repo);
+        var tickets = ReadTickets(outDir);
+
+        Assert.AreEqual(5, tickets.Count);
+        foreach (var msg in messages)
+        {
+            var ticketId = msg.Split(' ')[1].TrimStart('#');
+            var ticket = tickets.Single(t => t.Ticket == ticketId);
+            Assert.AreEqual(msg, ticket.Message, $"mojibake or truncation for ticket #{ticketId}");
+        }
+    }
+
     [TestMethod]
     public void Custom_ticket_pattern_from_config_is_honored()
     {

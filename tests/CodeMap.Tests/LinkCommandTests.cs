@@ -13,7 +13,7 @@ public class LinkCommandTests
     {
         var indexDir = SetUpIndex(
             entryPoints: new() { new EntryPoint("M:Api.OrdersController.Delete(System.Int32)", "http", "DELETE", "api/orders/{id}") },
-            frontendCalls: new() { new FrontendCall("fe:a.ts:1", "a.ts", 1, "DELETE", "`/api/orders/${id}`", "api/orders/{*}", "orders", "high") });
+            frontendCalls: new() { new FrontendCall("fe:a.ts:1", "a.ts", 1, "DELETE", "`/api/orders/${id}`", "api/orders/{*}", "orders", "high", new()) });
 
         LinkCommand.Run(new[] { "--index", indexDir });
 
@@ -32,7 +32,7 @@ public class LinkCommandTests
                 new EntryPoint("M:Api.A.Get(System.Int32)", "http", "GET", "api/orders/{id}"),
                 new EntryPoint("M:Api.B.Get(System.Guid)", "http", "GET", "api/orders/{guid}"),
             },
-            frontendCalls: new() { new FrontendCall("fe:a.ts:1", "a.ts", 1, "GET", "`/api/orders/${id}`", "api/orders/{*}", "orders", "high") });
+            frontendCalls: new() { new FrontendCall("fe:a.ts:1", "a.ts", 1, "GET", "`/api/orders/${id}`", "api/orders/{*}", "orders", "high", new()) });
 
         LinkCommand.Run(new[] { "--index", indexDir });
 
@@ -46,7 +46,7 @@ public class LinkCommandTests
     {
         var indexDir = SetUpIndex(
             entryPoints: new() { new EntryPoint("M:Api.OrdersController.Delete(System.Int32)", "http", "DELETE", "api/orders/{id}") },
-            frontendCalls: new() { new FrontendCall("fe:a.ts:1", "a.ts", 1, "GET", "'/api/orders/summary'", "api/orders/summary", "orders", "high") });
+            frontendCalls: new() { new FrontendCall("fe:a.ts:1", "a.ts", 1, "GET", "'/api/orders/summary'", "api/orders/summary", "orders", "high", new()) });
 
         LinkCommand.Run(new[] { "--index", indexDir });
 

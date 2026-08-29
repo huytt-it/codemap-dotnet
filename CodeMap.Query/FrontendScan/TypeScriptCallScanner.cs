@@ -15,7 +15,13 @@ namespace CodeMap.Query.FrontendScan;
 /// </summary>
 public static class TypeScriptCallScanner
 {
-    public sealed record RawCall(string File, int Line, string HttpMethod, string RawUrl);
+    /// <summary>
+    /// InjectedBy: components whose constructor takes the HTTP call's containing service class as a parameter
+    /// (Angular DI, one hop only — see ts-call-scan.js). Empty when the call isn't inside a class, the call is
+    /// already inside an @Component class (IsComponentItself — no resolution needed, the component itself IS
+    /// the screen), or no other class injects the containing service directly.
+    /// </summary>
+    public sealed record RawCall(string File, int Line, string HttpMethod, string RawUrl, List<string> InjectedBy, bool IsComponentItself);
 
     public sealed record ScanOutcome(List<RawCall> Calls, string? SkippedReason);
 
