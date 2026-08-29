@@ -1,0 +1,11 @@
+bin/
+obj/
+*.user
+.vs/
+
+# Output of `codemap scan`/`codemap map` when run against the fixture (generated artifact, not source)
+tests/Fixtures/**/.codemap/
+
+# Not pushed to GitHub per user request: docs/ (Vietnamese reports/spec), Claude Code's local project settings
+docs/
+.claude/

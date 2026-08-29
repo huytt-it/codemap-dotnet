@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="MSTest.TestAdapter" Version="3.6.0" />
+    <PackageReference Include="MSTest.TestFramework" Version="3.6.0" />
+    <!-- This test host genuinely calls MSBuildLocator (via CodeMap.Roslyn's MsBuildBootstrap, see
+         L2TestSetup) — same reasoning and fix as CodeMap.Roslyn.csproj: pin Microsoft.Build.Framework
+         compile-time only so it doesn't fight the SDK's own MSBuild assemblies at runtime (MSBL001).
+         See https://aka.ms/msbuild/locator/diagnostics/MSBL001. -->
+    <PackageReference Include="Microsoft.Build.Framework" Version="17.11.31" ExcludeAssets="runtime" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\CodeMap.Cli\CodeMap.Cli.csproj" />
+    <ProjectReference Include="..\..\CodeMap.Roslyn\CodeMap.Roslyn.csproj" />
+    <ProjectReference Include="..\..\CodeMap.Query\CodeMap.Query.csproj" />
+  </ItemGroup>
+
+</Project>

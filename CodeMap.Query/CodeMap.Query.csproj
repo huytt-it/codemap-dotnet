@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- Must NEVER reference MSBuild or Roslyn (spec section 2) — every command that only reads
+       the index (map, find, where, impact, slice) must run on a machine with no Build Tools. -->
+
+  <ItemGroup>
+    <!-- Args/CliUsageException are shared plumbing used by CodeMap.Roslyn's and CodeMap.Cli's own command
+         classes too, kept internal rather than public since they're implementation detail, not a real API. -->
+    <InternalsVisibleTo Include="CodeMap.Roslyn" />
+    <InternalsVisibleTo Include="CodeMap.Cli" />
+    <InternalsVisibleTo Include="CodeMap.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- scan-fe's Angular/TypeScript strategy (spec section 6): extracted to a temp file and run via `node` at
+         scan time (TypeScriptCallScanner). Embedded rather than a loose file so publishing this project is still
+         "one assembly" — no risk of the script going missing relative to wherever the exe ends up. -->
+    <EmbeddedResource Include="FrontendScan\ts-call-scan.js" />
+  </ItemGroup>
+
+</Project>
