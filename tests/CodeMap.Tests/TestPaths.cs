@@ -1,6 +1,6 @@
 namespace CodeMap.Tests;
 
-/// <summary>Finds the repo root (containing docs/CODEMAP-SPEC.md) from the test run directory, Debug or Release.</summary>
+/// <summary>Finds the repo root (containing CodeMap.slnx) from the test run directory, Debug or Release.</summary>
 internal static class TestPaths
 {
     public static string RepoRoot { get; } = FindRepoRoot();
@@ -10,15 +10,18 @@ internal static class TestPaths
 
     private static string FindRepoRoot()
     {
+        // CodeMap.slnx, not a docs/ file: docs/ is excluded from the public repo except for two specific files
+        // (see .gitignore), so a marker inside it makes every test fail on a clean clone with "repo root not
+        // found" instead of the real assertion failure it should be reporting.
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null)
         {
-            if (File.Exists(Path.Combine(dir.FullName, "docs", "CODEMAP-SPEC.md")))
+            if (File.Exists(Path.Combine(dir.FullName, "CodeMap.slnx")))
                 return dir.FullName;
             dir = dir.Parent;
         }
 
-        throw new InvalidOperationException("Could not find the repo root (docs/CODEMAP-SPEC.md) from " + AppContext.BaseDirectory);
+        throw new InvalidOperationException("Could not find the repo root (CodeMap.slnx) from " + AppContext.BaseDirectory);
     }
 
     public static string NewTempDir()
