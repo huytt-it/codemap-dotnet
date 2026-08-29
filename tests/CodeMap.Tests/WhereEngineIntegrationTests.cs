@@ -11,10 +11,17 @@ namespace CodeMap.Tests;
 /// a real `scan-git` run — because `tests/Fixtures/SampleSolution` itself isn't tracked by this repo's own git
 /// (there isn't one), a full copy is committed into a fresh temp git repo so file paths line up between the
 /// Roslyn scan (solution-dir-relative) and scan-git (repo-root-relative): the copy's own root becomes both.
+///
+/// A second, Japanese commit covers the other realistic deployment: a team whose commit history has no spaces
+/// between words. That path has to survive the same round trip (git arg encoding → UTF-8 stdout → jsonl → query
+/// tokenizer), so it is pinned here end to end rather than only in `WhereEngineCjkTests`' in-memory data.
 /// </summary>
 [TestClass]
 public class WhereEngineIntegrationTests
 {
+    private const string JapaneseTicketMessage =
+        "TICKET-4900: 注文の削除ができない不具合を修正 - OrderRepository.Delete";
+
     private static ImpactIndex _index = null!;
 
     [ClassInitialize]
@@ -26,6 +33,25 @@ public class WhereEngineIntegrationTests
         CopyDirectory(Path.GetDirectoryName(TestPaths.FixtureSolution)!, repoDir);
         GitFixtureHelper.InitInPlace(repoDir);
         GitFixtureHelper.Commit(repoDir, "Fix TICKET-4821: hủy đơn hàng khi khách đã thanh toán, sửa OrderService.Cancel");
+
+        // A second commit touching exactly one file, so this ticket maps to OrderRepository.cs alone. The edit is
+        // a Japanese comment, which also proves a non-ASCII source file survives the Roslyn scan.
+        GitFixtureHelper.Commit(repoDir, JapaneseTicketMessage, ("Orders.Data/OrderRepository.cs", """
+            namespace Orders.Data;
+
+            public class OrderRepository
+            {
+                public bool Exists(int orderId)
+                {
+                    return orderId > 0;
+                }
+
+                // 注文を削除する。呼び出し元は Exists で存在確認を済ませていること。
+                public void Delete(int orderId)
+                {
+                }
+            }
+            """));
 
         RestoreSolution(repoDir);
 
@@ -55,6 +81,43 @@ public class WhereEngineIntegrationTests
         var top = results.First(r => r.SymbolId == "M:Orders.OrderService.Cancel(System.Int32)");
 
         Assert.IsTrue(top.Reasons.Any(r => r.Contains("4821", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public void Japanese_business_query_finds_the_symbol_named_in_the_japanese_ticket()
+    {
+        const string query = "注文を削除できない";
+
+        // The point of the bigram tokenizer: this query is NOT a substring of the commit message (different
+        // particles, different ending), so whole-run matching — one token per space-free sentence — scores zero.
+        Assert.IsFalse(JapaneseTicketMessage.Contains(query, StringComparison.Ordinal));
+
+        var results = WhereEngine.Search(_index, query);
+
+        var top5 = results.Take(5).Select(r => r.SymbolId).ToList();
+        CollectionAssert.Contains(top5, "M:Orders.Data.OrderRepository.Delete(System.Int32)");
+    }
+
+    [TestMethod]
+    public void Japanese_ticket_message_survives_the_round_trip_with_its_characters_intact()
+    {
+        var results = WhereEngine.Search(_index, "注文を削除できない");
+        var top = results.First(r => r.SymbolId == "M:Orders.Data.OrderRepository.Delete(System.Int32)");
+
+        var reason = top.Reasons.Single(r => r.Contains("4900", StringComparison.Ordinal));
+        StringAssert.Contains(reason, "注文の削除ができない不具合を修正", "mojibake anywhere in git → jsonl → query would show up here");
+    }
+
+    [TestMethod]
+    public void A_japanese_query_about_an_unrelated_feature_does_not_reach_the_delete_ticket()
+    {
+        // Guards the real risk of bigram matching: scoring on incidental character pairs. 在庫 (inventory) shares
+        // no content bigram with the 注文/削除 ticket, so it must not surface OrderRepository at all.
+        var results = WhereEngine.Search(_index, "在庫数が合わない");
+
+        CollectionAssert.DoesNotContain(
+            results.Select(r => r.SymbolId).ToList(),
+            "M:Orders.Data.OrderRepository.Delete(System.Int32)");
     }
 
     private static void RestoreSolution(string repoDir)

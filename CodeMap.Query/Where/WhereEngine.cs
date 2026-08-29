@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using CodeMap.Query.Impact;
 using CodeMap.Query.Models;
@@ -54,7 +55,7 @@ public static partial class WhereEngine
             .ToList();
     }
 
-    /// <summary>Source 2 (spec section 3): "ticket-files.jsonl — ticket cũ có mô tả tương tự đã sửa file nào". The only signal that can realistically bridge a Vietnamese query to English code — a human already wrote that bridge once, in the commit message.</summary>
+    /// <summary>Source 2 (spec section 3): "ticket-files.jsonl — ticket cũ có mô tả tương tự đã sửa file nào". The only signal that can realistically bridge a natural-language query to English identifiers — a human already wrote that bridge once, in the commit message. It therefore only fires when the query is in the same language the team writes commits in.</summary>
     private static void ScoreTickets(ImpactIndex index, List<string> queryTokens, Action<string, double, string> add)
     {
         foreach (var ticket in index.Tickets)
@@ -70,7 +71,12 @@ public static partial class WhereEngine
             {
                 foreach (var symbol in index.SymbolsById.Values.Where(s => s.File == file))
                 {
-                    var namedInMessage = messageTokens.Contains(symbol.Name.ToLowerInvariant());
+                    // Tokenize the name rather than lowercasing it: that way an identifier written fullwidth in
+                    // the message still matches (NFKC), and a non-Latin identifier is compared bigram-to-bigram
+                    // like everything else. Empty means the name was too short to survive tokenizing — no bonus,
+                    // otherwise "all tokens present" would be vacuously true for every symbol.
+                    var nameTokens = Tokenize(symbol.Name);
+                    var namedInMessage = nameTokens.Count > 0 && nameTokens.All(messageTokens.Contains);
                     var score = namedInMessage ? baseScore * NamedInTicketBonus : baseScore;
                     var reason = exactTicketId
                         ? $"Exact match on ticket #{ticket.Ticket} ({ticket.Date}): \"{ticket.Message}\""
@@ -123,8 +129,98 @@ public static partial class WhereEngine
         return sym.ContainingType != null ? $"{sym.ContainingType}.{sym.Name}" : sym.Name;
     }
 
-    internal static List<string> Tokenize(string text) =>
-        WordPattern().Matches(text).Select(m => m.Value.ToLowerInvariant()).Where(t => t.Length >= 2).Distinct().ToList();
+    internal static List<string> Tokenize(string text)
+    {
+        // NFKC first: folds halfwidth katakana (ｷｬﾝｾﾙ) onto normal katakana (キャンセル), fullwidth Latin (Ｃａｎｃｅｌ)
+        // onto ASCII, and composes Vietnamese diacritics — so the same word typed two different ways, by two
+        // different people, over years of commit history, still produces the same tokens.
+        var normalized = text.IsNormalized(NormalizationForm.FormKC) ? text : text.Normalize(NormalizationForm.FormKC);
+
+        var tokens = new List<string>();
+        foreach (Match m in WordPattern().Matches(normalized))
+            AppendRunTokens(m.Value, tokens);
+        return tokens.Distinct().ToList();
+    }
+
+    /// <summary>
+    /// One regex match is a run of letters/digits, but that is only a *word* in a script that separates words
+    /// with spaces. Japanese and Chinese do not: "注文をキャンセルできない" is a whole clause in a single run, and
+    /// treating it as one token means only a byte-identical query could ever match it. So split the run at the
+    /// script boundary (which also separates "キャンセルOrderService" into its two halves) and tokenize each part
+    /// by its own rules.
+    /// </summary>
+    private static void AppendRunTokens(string run, List<string> tokens)
+    {
+        var runes = run.EnumerateRunes().ToList(); // rune, not char: rare kanji live above the BMP as surrogate pairs
+        var i = 0;
+        while (i < runes.Count)
+        {
+            var isCjk = IsCjk(runes[i]);
+            var start = i;
+            while (i < runes.Count && IsCjk(runes[i]) == isCjk) i++;
+
+            if (isCjk) AppendCjkBigrams(runes, start, i, tokens);
+            else
+            {
+                var segment = string.Concat(runes.GetRange(start, i - start)).ToLowerInvariant();
+                if (segment.Length >= 2) tokens.Add(segment); // drop "a"/"I"/"1" noise, same as before
+            }
+        }
+    }
+
+    /// <summary>
+    /// Overlapping character bigrams — the standard dictionary-free way to make Japanese/Chinese searchable
+    /// (the same approach as Lucene's CJKBigramFilter). Staying dictionary-free matters here: spec section 1
+    /// requires the tool to run fully offline with no model and no external data, which rules out a real
+    /// morphological analyzer (MeCab/Kuromoji and their dictionaries).
+    /// "注文をキャンセル" → 注文, 文を, をキ, キャ, ャン, ンセ, セル. A query written with different particles or a
+    /// different sentence structure still overlaps on the content bigrams (注文, キャ, ャン, ンセ, セル), which a
+    /// whole-run comparison could never do.
+    /// </summary>
+    private static void AppendCjkBigrams(List<Rune> runes, int start, int end, List<string> tokens)
+    {
+        if (end - start == 1)
+        {
+            tokens.Add(runes[start].ToString()); // a lone ideograph is already a whole word — keep it despite length 1
+            return;
+        }
+
+        // Japanese writes content words in kanji/katakana and grammar in hiragana, so a bigram of two hiragana is
+        // nearly always an inflection or particle pair. Those collide across completely unrelated tickets —
+        // 「削除できない」 and 「合わない」 share ない and nothing else — which is the same false-confidence problem the
+        // Vietnamese function words (bị, khi, được) cause, only far more frequent. Dropping them is the CJK half
+        // of a stop-word list, and needs no dictionary: it falls straight out of which script a character is in.
+        // Guarded, because an all-hiragana segment has no content half to fall back on — dropping there would
+        // leave the segment with no tokens at all.
+        var hasContentScript = false;
+        for (var i = start; i < end && !hasContentScript; i++) hasContentScript = !IsHiragana(runes[i]);
+
+        for (var i = start; i < end - 1; i++)
+        {
+            if (hasContentScript && IsHiragana(runes[i]) && IsHiragana(runes[i + 1])) continue;
+            tokens.Add(string.Concat(runes[i].ToString(), runes[i + 1].ToString()));
+        }
+    }
+
+    private static bool IsHiragana(Rune r) => r.Value is >= 0x3041 and <= 0x309F;
+
+    /// <summary>
+    /// Scripts written without spaces between words, so a run of them needs bigram splitting. Deliberately
+    /// excludes Hangul: Korean *does* separate words with spaces, so a Hangul run is already a word and
+    /// bigramming it would only blur exact matches.
+    /// </summary>
+    private static bool IsCjk(Rune r) => r.Value switch
+    {
+        >= 0x3005 and <= 0x3006 => true,   // 々 iteration mark, 〆 — categorized as letters, so they reach us
+        >= 0x3040 and <= 0x30FF => true,   // hiragana + katakana (incl. the ー long-vowel mark)
+        >= 0x31F0 and <= 0x31FF => true,   // katakana phonetic extensions
+        >= 0x3400 and <= 0x4DBF => true,   // CJK unified ideographs extension A
+        >= 0x4E00 and <= 0x9FFF => true,   // CJK unified ideographs
+        >= 0xF900 and <= 0xFAFF => true,   // CJK compatibility ideographs
+        >= 0xFF66 and <= 0xFF9D => true,   // halfwidth katakana (only reachable if NFKC was skipped)
+        >= 0x20000 and <= 0x2FA1F => true, // extensions B–F + compatibility supplement
+        _ => false,
+    };
 
     [GeneratedRegex(@"[\p{L}\p{Nd}]+")]
     private static partial Regex WordPattern();
