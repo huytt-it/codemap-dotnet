@@ -74,17 +74,59 @@ internal static class ScanGitCommand
             return 1;
         }
 
+        var indexDir = Path.Combine(outDir, "index");
+        Directory.CreateDirectory(indexDir);
+
+        // Before extracting anything: put git's repo-root-relative paths on the same footing as the Roslyn
+        // scan's solution-relative ones, or the exact-string join in ImpactEngine/WhereEngine matches nothing.
+        var solutionPrefix = GitPathRebaser.ReadSolutionPrefix(indexDir);
+        if (solutionPrefix != null)
+        {
+            commits = commits
+                .Select(c => c with { Files = c.Files.Select(f => GitPathRebaser.Rebase(solutionPrefix, f)).ToList() })
+                .ToList();
+            Console.WriteLine($"Solution is at '{solutionPrefix}/' inside the repo — rebasing git paths onto it.");
+        }
+
         var tickets = TicketExtractor.Extract(commits, ticketPattern, NoiseFileThreshold, AllowedExtensions);
         var coChanges = CoChangeCalculator.Compute(commits, NoiseFileThreshold, AllowedExtensions, MinCoChangeTogether);
 
-        var indexDir = Path.Combine(outDir, "index");
-        Directory.CreateDirectory(indexDir);
         JsonlWriter.Write(Path.Combine(indexDir, "ticket-files.jsonl"), tickets);
         JsonlWriter.Write(Path.Combine(indexDir, "co-change.jsonl"), coChanges);
 
         Console.WriteLine(
             $"scan-git done: {commits.Count} commit(s) scanned, {tickets.Count} ticket(s), {coChanges.Count} co-change pair(s).");
         Console.WriteLine($"Output: {indexDir}");
+
+        WarnIfNothingJoinsToTheIndex(indexDir, tickets);
         return 0;
+    }
+
+    /// <summary>
+    /// Both files this command writes are joined to the rest of the index by exact file-path string match. A
+    /// join that matches nothing raises no error and produces no empty file — `where` just quietly drops to its
+    /// two weakest sources. symbols.jsonl is already on disk, so check the join here, while the cause (a wrong
+    /// --repo, a solution scanned from a different root, a case-mismatched path) is still in front of the user.
+    /// </summary>
+    private static void WarnIfNothingJoinsToTheIndex(string indexDir, List<Models.TicketFileRecord> tickets)
+    {
+        var symbolsPath = Path.Combine(indexDir, "symbols.jsonl");
+        if (!File.Exists(symbolsPath))
+        {
+            Console.WriteLine("Note: symbols.jsonl not found, so the file paths just written could not be checked against the scan. Run `codemap scan` first for that check.");
+            return;
+        }
+
+        var scannedFiles = JsonlReader.Read<Models.SymbolRecord>(symbolsPath)
+            .Select(s => s.File)
+            .ToHashSet(StringComparer.Ordinal);
+        if (scannedFiles.Count == 0 || tickets.Count == 0) return;
+
+        if (tickets.Any(t => t.Files.Any(scannedFiles.Contains))) return;
+
+        Console.Error.WriteLine(
+            $"WARNING: none of the {tickets.Count} ticket(s) touch a file that `codemap scan` indexed. Ticket history and " +
+            "co-change data will be invisible to `where` and `impact`. Usual cause: --repo points at a different " +
+            "repository than the scanned solution. Check that meta.json's solutionPath sits inside --repo.");
     }
 }

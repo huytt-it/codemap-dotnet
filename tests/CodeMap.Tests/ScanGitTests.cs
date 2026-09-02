@@ -1,3 +1,4 @@
+using CodeMap.Query.Config;
 using CodeMap.Query.Git;
 using CodeMap.Query.Json;
 using CodeMap.Query.Models;
@@ -150,6 +151,19 @@ public class ScanGitTests
         Assert.AreEqual("42", tickets[0].Ticket);
     }
 
+    [TestMethod] // scan looks for the config from the solution's directory, scan-git from the repo root; one file at the root must serve both
+    public void Config_at_repo_root_is_found_from_a_nested_solution_directory()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        File.WriteAllText(Path.Combine(repo, "codemap.config.json"), """{ "ticketPattern": "WEIRD-(\\d+)" }""");
+        var nested = Path.Combine(repo, "src", "Backend");
+        Directory.CreateDirectory(nested);
+
+        var config = CodeMapConfig.Load(nested);
+
+        Assert.AreEqual(@"WEIRD-(\d+)", config.EffectiveTicketPattern);
+    }
+
     [TestMethod]
     public void No_matching_ticket_in_probe_window_refuses_to_write_output()
     {
@@ -183,6 +197,107 @@ public class ScanGitTests
         var ex = TestAssert.RecordException(() => ScanGitCommand.Run(new[] { "--repo", plainDir, "--out", outRoot }));
 
         Assert.IsNull(ex);
+    }
+
+    [TestMethod] // git reports paths from the repo root; the Roslyn scan records them from the solution's directory
+    public void Solution_nested_in_repo_gets_git_paths_rebased_onto_the_solution_directory()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 order cancel", ("src/Orders/Svc.cs", "class Svc {}"));
+
+        var outDir = RunScanGitWithMeta(repo, solutionPath: "src/App.sln");
+
+        var ticket = ReadTickets(outDir).Single(t => t.Ticket == "1234");
+        CollectionAssert.AreEquivalent(new[] { "Orders/Svc.cs" }, ticket.Files);
+    }
+
+    [TestMethod] // a stored proc or shared config outside the solution is exactly what co-change exists to catch — keep it, don't drop it
+    public void File_outside_the_solution_directory_is_kept_as_a_relative_path()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 proc and caller",
+            ("src/Orders/Svc.cs", "class Svc {}"), ("db/procs/cancel.sql", "-- sql"));
+
+        var outDir = RunScanGitWithMeta(repo, solutionPath: "src/App.sln");
+
+        var ticket = ReadTickets(outDir).Single(t => t.Ticket == "1234");
+        CollectionAssert.AreEquivalent(new[] { "Orders/Svc.cs", "../db/procs/cancel.sql" }, ticket.Files);
+    }
+
+    [TestMethod] // the common layout: solution at the repo root, nothing to rebase
+    public void Solution_at_repo_root_leaves_git_paths_untouched()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 order cancel", ("Orders/Svc.cs", "class Svc {}"));
+
+        var outDir = RunScanGitWithMeta(repo, solutionPath: "App.sln");
+
+        var ticket = ReadTickets(outDir).Single(t => t.Ticket == "1234");
+        CollectionAssert.AreEquivalent(new[] { "Orders/Svc.cs" }, ticket.Files);
+    }
+
+    [TestMethod] // scan-git run before scan, or standalone: no meta.json to rebase against, so behave as before
+    public void Without_meta_json_paths_stay_repo_root_relative()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 order cancel", ("src/Orders/Svc.cs", "class Svc {}"));
+
+        var outDir = RunScanGit(repo);
+
+        var ticket = ReadTickets(outDir).Single(t => t.Ticket == "1234");
+        CollectionAssert.AreEquivalent(new[] { "src/Orders/Svc.cs" }, ticket.Files);
+    }
+
+    [TestMethod] // the join is silent when it fails, so scan-git has to say so itself
+    public void Warns_when_no_ticket_file_matches_any_scanned_symbol()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 order cancel", ("Orders/Svc.cs", "class Svc {}"));
+
+        var outDir = TestPaths.NewTempDir();
+        var indexDir = Path.Combine(outDir, "index");
+        Directory.CreateDirectory(indexDir);
+        JsonlWriter.Write(Path.Combine(indexDir, "symbols.jsonl"), new[]
+        {
+            new SymbolRecord
+            {
+                Id = "M:Other.Thing.Do", Kind = "method", Name = "Do", Project = "P",
+                File = "somewhere/else/Thing.cs", Line = 1, Accessibility = "public",
+            },
+        });
+
+        var stderr = new StringWriter();
+        var previous = Console.Error;
+        try
+        {
+            Console.SetError(stderr);
+            Assert.AreEqual(0, ScanGitCommand.Run(new[] { "--repo", repo, "--out", outDir }));
+        }
+        finally
+        {
+            Console.SetError(previous);
+        }
+
+        StringAssert.Contains(stderr.ToString(), "none of the 1 ticket(s) touch a file that `codemap scan` indexed");
+    }
+
+    /// <summary>scan-git reads the solution's location from an existing meta.json, which `codemap scan` normally wrote first.</summary>
+    private static string RunScanGitWithMeta(string repoDir, string solutionPath)
+    {
+        var outDir = TestPaths.NewTempDir();
+        var indexDir = Path.Combine(outDir, "index");
+        Directory.CreateDirectory(indexDir);
+        JsonUtil.WriteIndented(Path.Combine(indexDir, "meta.json"), new MetaModel
+        {
+            IndexedAt = "2026-01-01T00:00:00Z",
+            SolutionPath = solutionPath,
+            ProjectCount = 1,
+            SymbolCount = 0,
+            EdgeCount = 0,
+        });
+
+        Assert.AreEqual(0, ScanGitCommand.Run(new[] { "--repo", repoDir, "--out", outDir }));
+        return outDir;
     }
 
     private static string RunScanGit(string repoDir)

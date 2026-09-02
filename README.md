@@ -224,6 +224,8 @@ codemap scan --solution MyApp.sln --out D:\CodeMapIndex\MyApp
 codemap scan-git --repo . --out D:\CodeMapIndex\MyApp
 ```
 
+> **Run this after Step 1, not before.** `git log` reports paths from the repository root, while the scan records them from the solution's directory. When the solution sits deeper in the repo (`src/MyApp.sln`), `scan-git` reads `meta.json` from Step 1 to reconcile the two — without it, no ticket or co-change entry can match a scanned file, which costs `where` its strongest ranking signal. The command says which reconciliation it applied, and warns if nothing matched.
+
 > **If it reports "No ticket ID matched":** your repo names commits differently from the default convention (`#1234`, `TICKET-1234`, `BUG-1234`, `JIRA-1234`). Create a `codemap.config.json` at the repo root — see [Part 5](#part-5--configuration-optional).
 
 ### Step 3 — Scan the frontend (skip if there is no separate frontend)

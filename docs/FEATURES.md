@@ -98,6 +98,30 @@ Lọc nhiễu tự động: bỏ commit đụng >50 file (merge, format toàn re
 
 > ⚠ Dữ liệu git phản ánh **lịch sử**, không phải cấu trúc hiện tại — file đã xóa/đổi tên vẫn xuất hiện.
 
+### Khi nào `scan-git` không chạy được, hoặc chạy được nhưng dữ liệu mỏng
+
+Dừng hẳn, báo lỗi rõ (exit 1):
+
+- **Không có `git` trên PATH.**
+- **Repo không có commit nào**, hoặc `--since` quá hẹp.
+- **Không commit nào khớp mẫu ticket.** Tool probe 200 commit đầu; không khớp thì **từ chối ghi file rỗng** và bảo bạn đặt `ticketPattern` trong `codemap.config.json`. Đây là ca hay gặp nhất.
+
+Chạy xong, báo thành công, nhưng dữ liệu thiếu — cần tự biết:
+
+- **Shallow clone** (`git clone --depth`, checkout mặc định của nhiều CI): lịch sử bị cắt cụt.
+- **Commit gộp >50 file bị bỏ hoàn toàn.** Team squash cả feature vào một commit thì rất nhiều commit rơi vào ngưỡng này.
+- **`.cshtml` và `.razor` không nằm trong whitelist đuôi file** — lịch sử Razor Page/View không được ghi nhận.
+- **File đổi tên**: `git log --name-only` chạy không kèm `--follow`, nên lịch sử đứt tại chỗ rename.
+
+### Đường dẫn phải khớp với `scan`, nếu không dữ liệu git thành vô dụng
+
+`git log` luôn in đường dẫn tính từ **gốc repo**, còn `scan` ghi đường dẫn symbol tính từ **thư mục chứa solution**. Hai bên được ghép bằng **so khớp chuỗi chính xác**, nên khi solution nằm sâu trong repo (`src/App.sln`) thì trước đây không cặp nào khớp: `where` mất nguồn mạnh nhất, `impact` mất sạch ticket và co-change — **không có lỗi, không có file rỗng, không có gì trong `diagnostics.json`**.
+
+Hiện `scan-git` đọc `meta.json` để quy đường dẫn git về đúng gốc mà `scan` dùng, và in ra dòng `Solution is at 'src/' inside the repo — rebasing git paths onto it.` khi có quy đổi. Hai hệ quả:
+
+- **Chạy `scan` trước `scan-git`.** `codemap sync` đã làm đúng thứ tự này. Chạy `scan-git` khi chưa có `meta.json` thì không quy đổi được, và tool nói rõ điều đó.
+- Nếu ghép xong mà **không ticket nào chạm được file đã index**, tool in `WARNING` ngay tại chỗ — thường là `--repo` đang trỏ sang repo khác với solution đã quét.
+
 ---
 
 ## 5. Chống "nổ" report

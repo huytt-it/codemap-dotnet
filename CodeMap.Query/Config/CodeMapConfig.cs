@@ -21,11 +21,21 @@ public sealed class CodeMapConfig
     public string EffectiveTicketPattern => string.IsNullOrWhiteSpace(TicketPattern) ? DefaultTicketPattern : TicketPattern;
     public string EffectiveFrontendAppDir => string.IsNullOrWhiteSpace(FrontendAppDir) ? DefaultFrontendAppDir : FrontendAppDir;
 
-    /// <summary>Reads codemap.config.json from <paramref name="repoRoot"/> if present. Throws with a clear message if the file exists but isn't valid JSON — a malformed config should never be silently ignored.</summary>
-    public static CodeMapConfig Load(string repoRoot)
+    /// <summary>
+    /// Reads codemap.config.json, searching <paramref name="startDir"/> and then its parent directories — the
+    /// same walk-up ProjectRegistry.Discover already uses. A single directory probe used to be enough only
+    /// because callers disagreed on which directory to pass: `scan` passes the solution's directory,
+    /// `scan-git` passes the repo root. With a solution nested at `src/App.sln` those are different places, so
+    /// one file at the repo root configured `ticketPattern` for scan-git while being invisible to `scan`'s
+    /// `diAttribute` lookup. Walking up makes one file at the repo root serve both.
+    ///
+    /// Throws with a clear message if a file is found but isn't valid JSON — a malformed config should never
+    /// be silently ignored.
+    /// </summary>
+    public static CodeMapConfig Load(string startDir)
     {
-        var path = Path.Combine(repoRoot, FileName);
-        if (!File.Exists(path)) return new CodeMapConfig();
+        var path = FindUpward(startDir);
+        if (path == null) return new CodeMapConfig();
 
         try
         {
@@ -35,5 +45,16 @@ public sealed class CodeMapConfig
         {
             throw new InvalidOperationException($"Failed to parse {path}: {ex.Message}", ex);
         }
+    }
+
+    private static string? FindUpward(string startDir)
+    {
+        for (var dir = new DirectoryInfo(Path.GetFullPath(startDir)); dir != null; dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, FileName);
+            if (File.Exists(candidate)) return candidate;
+        }
+
+        return null;
     }
 }
