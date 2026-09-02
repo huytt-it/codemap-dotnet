@@ -79,7 +79,7 @@ Toàn bộ test phải pass. Nếu đỏ ngay từ máy mới clone, kiểm tra 
 
 ### Lười đọc? Bảo AI setup hộ
 
-Clone repo này về (bước "Lấy source code" ở trên) rồi mở [docs/SETUP-PROMPT.md](docs/SETUP-PROMPT.md), copy nguyên khối prompt trong đó dán vào Copilot / Claude Code / Cursor — nó sẽ tự dò SDK, chọn cách cài phù hợp với quyền hạn máy bạn, khai báo `codemap.projects.json` và quét. Prompt cố tình **cấm agent tự `git clone`**: bạn clone, rồi chỉ đường dẫn cho nó.
+Clone repo này về (bước "Lấy source code" ở trên) rồi mở [setup/SETUP-PROMPT.md](setup/SETUP-PROMPT.md), copy nguyên khối prompt trong đó dán vào Copilot / Claude Code / Cursor — nó sẽ tự dò SDK, chọn cách cài phù hợp với quyền hạn máy bạn, khai báo `codemap.projects.json` và quét. Prompt cố tình **cấm agent tự `git clone`**: bạn clone, rồi chỉ đường dẫn cho nó.
 
 ---
 
@@ -89,7 +89,13 @@ Thay vì nhớ 4 đường dẫn tuyệt đối cho mỗi repo, khai báo **mộ
 
 ### Bước 1 — Tạo `codemap.projects.json`
 
-Đặt ở đâu cũng được: gốc repo, một thư mục "workspace" chung, hoặc `~/.codemap/`. Tool tự tìm ngược lên thư mục cha, nên bạn chạy lệnh từ thư mục con nào cũng thấy.
+Có sẵn template kèm 3 ví dụ trong [setup/](setup/) — copy ra rồi điền:
+
+```bash
+cp setup/codemap.projects.example.json setup/codemap.projects.json
+```
+
+Đặt ở đâu cũng được: trong `setup/`, gốc repo, một thư mục "workspace" chung, hoặc `~/.codemap/`. Tool tìm theo thứ tự `--config` → thư mục hiện tại rồi ngược lên các thư mục cha → `~/.codemap/`.
 
 ```json
 {
@@ -323,10 +329,10 @@ Tạo ở **gốc repo bị quét** nếu cần. Không có file này thì tool 
 
 ## Cho AI agent đọc (GitHub Copilot, Claude...)
 
-[docs/copilot-instructions.md](docs/copilot-instructions.md) là bản hướng dẫn đầy đủ cho AI: quy trình hỏi-đáp, cách đọc report, ngôn ngữ nào dùng cho `where`, các điều cấm. Copy file này vào `.github/copilot-instructions.md` **trong repo bạn đang quét** (không phải repo `codemap-dotnet` này) để agent tự đọc mỗi session.
+[setup/copilot-instructions.md](setup/copilot-instructions.md) là bản hướng dẫn đầy đủ cho AI: quy trình hỏi-đáp, cách đọc report, ngôn ngữ nào dùng cho `where`, các điều cấm. Copy file này vào `.github/copilot-instructions.md` **trong repo bạn đang quét** (không phải repo `codemap-dotnet` này) để agent tự đọc mỗi session. Nó không chứa đường dẫn cứng — tự đọc `codemap.projects.json` để biết index nằm đâu.
 
 ## Tài liệu thêm
 
-- [docs/SETUP-PROMPT.md](docs/SETUP-PROMPT.md) — prompt copy-paste để AI tự cài đặt và cấu hình thay bạn
+- **[setup/](setup/)** — mọi thứ cần điền, gom một chỗ: template `codemap.projects.json`, prompt cho AI, và file hướng dẫn agent. Xem [setup/README.md](setup/README.md).
 - [docs/FEATURES.md](docs/FEATURES.md) — tool làm được gì, **không** làm được gì (nên đọc trước khi tin kết quả)
 - `docs/CODEMAP-SPEC.md`, `docs/OPS-NIGHTLY-SCAN.md`, `docs/TEST-REPORT-PHASE*.md` — tài liệu nội bộ (spec thiết kế, vận hành quét đêm, báo cáo test từng giai đoạn). **Không có trong repo public** — chỉ tồn tại trong bản làm việc gốc, chưa được đẩy lên git.

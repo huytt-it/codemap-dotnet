@@ -64,8 +64,10 @@ Hỏi tôi (đừng đoán), cho TỪNG codebase tôi muốn index — tôi có 
   3. Có frontend Angular/TypeScript riêng không (đường dẫn), nếu có
   4. Team tôi viết commit/ticket bằng ngôn ngữ nào (ja / vi / en / ...)
 
-Rồi tạo file `codemap.projects.json`. Hỏi tôi muốn đặt ở đâu — gốc repo, một thư mục workspace
-chung, hay `~/.codemap/`. Định dạng:
+Rồi tạo file `codemap.projects.json`. Trong thư mục CodeMap đã có sẵn template
+`setup/codemap.projects.example.json` (3 entry mẫu) — copy nó ra thành `setup/codemap.projects.json`
+rồi XOÁ HẾT entry mẫu, điền của tôi. Nếu tôi muốn đặt file ở chỗ khác (gốc repo đích, hay
+`~/.codemap/`) thì hỏi tôi trước. Định dạng:
 
 {
   "projects": [
@@ -99,7 +101,7 @@ Sau khi xong, chạy `codemap projects` để xác nhận trạng thái index, r
 và tóm tắt cho tôi: bao nhiêu project, bao nhiêu entry point, mục Blind Spots nói gì.
 
 ## Bước 6 — Cấu hình cho AI agent
-Copy `docs/copilot-instructions.md` từ repo CodeMap sang repo TÔI ĐANG QUÉT, đặt tại
+Copy `setup/copilot-instructions.md` từ thư mục CodeMap sang repo TÔI ĐANG QUÉT, đặt tại
 `.github/copilot-instructions.md` (tạo thư mục `.github` nếu chưa có).
 
 File đó đã tự đọc `codemap.projects.json` nên KHÔNG cần điền đường dẫn tay. Nhưng phải kiểm 2 điều:

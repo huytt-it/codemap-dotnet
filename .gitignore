@@ -9,6 +9,10 @@ tests/Fixtures/**/.codemap/
 # `dotnet pack` output for the global-tool install path (build artifact, rebuilt on demand)
 nupkg/
 
+# The user's filled-in project registry: holds real (often internal) paths, and this repo is public.
+# The committed template is setup/codemap.projects.example.json.
+codemap.projects.json
+
 # Not pushed to GitHub per user request: docs/ (Vietnamese reports/spec), Claude Code's local project settings
 docs/
 .claude/

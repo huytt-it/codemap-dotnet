@@ -1,0 +1,29 @@
+{
+  "description": "ĐIỀN VÀO ĐÂY: các codebase bạn muốn index. Xoá hết entry mẫu bên dưới rồi thêm của bạn. Đường dẫn dùng dấu / (kể cả trên Windows), tương đối thì tính từ vị trí CHÍNH FILE NÀY.",
+
+  "projects": [
+    {
+      "name": "shop",
+      "description": "MẪU 1 — có frontend Angular riêng, team viết commit tiếng Nhật",
+      "solution": "D:/Repos/Shop/Shop.sln",
+      "output": "D:/CodeMapIndex/Shop",
+      "frontend": "D:/Repos/Shop.Web",
+      "commitLanguage": "ja"
+    },
+    {
+      "name": "billing",
+      "description": "MẪU 2 — không có frontend riêng (bỏ hẳn khoá \"frontend\"), solution dạng .slnx",
+      "solution": "D:/Repos/Billing/Billing.slnx",
+      "output": "D:/CodeMapIndex/Billing",
+      "commitLanguage": "vi"
+    },
+    {
+      "name": "legacy",
+      "description": "MẪU 3 — solution nằm sâu trong repo, nên phải chỉ rõ \"repo\" để scan-git lấy đúng gốc git",
+      "solution": "D:/Repos/Legacy/src/Legacy.sln",
+      "repo": "D:/Repos/Legacy",
+      "output": "D:/CodeMapIndex/Legacy",
+      "commitLanguage": "en"
+    }
+  ]
+}
