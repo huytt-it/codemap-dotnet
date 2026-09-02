@@ -11,7 +11,7 @@ internal static class LinkCommand
 {
     public static int Run(string[] rawArgs)
     {
-        var args = Args.Parse(rawArgs);
+        var args = Args.Parse(rawArgs, options: IndexPathResolver.OptionNames, flags: Array.Empty<string>());
         var indexDir = IndexPathResolver.Resolve(args);
 
         var entryPointsPath = Path.Combine(indexDir, "entrypoints.json");

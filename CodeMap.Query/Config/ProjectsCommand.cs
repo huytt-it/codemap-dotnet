@@ -15,7 +15,7 @@ internal static class ProjectsCommand
 {
     public static int Run(string[] rawArgs)
     {
-        var args = Args.Parse(rawArgs);
+        var args = Args.Parse(rawArgs, options: new[] { "config" }, flags: Array.Empty<string>());
 
         var registry = ProjectRegistry.Discover(args.GetOrDefault("config"));
         if (registry == null)

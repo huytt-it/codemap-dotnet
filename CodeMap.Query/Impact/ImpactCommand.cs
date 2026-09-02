@@ -8,7 +8,7 @@ internal static class ImpactCommand
 {
     public static int Run(string[] rawArgs)
     {
-        var args = Args.Parse(rawArgs);
+        var args = Args.Parse(rawArgs, options: IndexPathResolver.OptionNames.Concat(new[] { "symbol", "depth", "out" }).ToArray(), flags: new[] { "full" });
         var indexDir = IndexPathResolver.Resolve(args);
         var symbolId = args.Require("symbol");
         var depth = args.GetIntOrDefault("depth", 5);

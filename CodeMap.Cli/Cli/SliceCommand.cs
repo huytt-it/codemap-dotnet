@@ -15,7 +15,7 @@ internal static class SliceCommand
 {
     public static int Run(string[] rawArgs)
     {
-        var args = Args.Parse(rawArgs);
+        var args = Args.Parse(rawArgs, options: IndexPathResolver.OptionNames.Concat(new[] { "symbol", "depth", "out" }).ToArray(), flags: Array.Empty<string>());
         var indexDir = IndexPathResolver.Resolve(args);
         var symbolId = args.Require("symbol");
         var depth = args.GetIntOrDefault("depth", 3);

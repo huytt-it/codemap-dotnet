@@ -20,7 +20,7 @@ internal static class SyncCommand
 {
     public static int Run(string[] rawArgs)
     {
-        var args = Args.Parse(rawArgs);
+        var args = Args.Parse(rawArgs, options: new[] { "project", "config" }, flags: new[] { "all" });
         var all = args.HasFlag("all");
         var projectName = args.GetOrDefault("project");
 

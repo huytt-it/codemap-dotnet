@@ -21,7 +21,7 @@ internal static class ScanGitCommand
 
     public static int Run(string[] rawArgs)
     {
-        var args = Args.Parse(rawArgs);
+        var args = Args.Parse(rawArgs, options: new[] { "repo", "out", "since" }, flags: Array.Empty<string>());
         var repoPath = Path.GetFullPath(args.Require("repo"));
         var outDir = args.Require("out");
         var since = args.GetOrDefault("since");

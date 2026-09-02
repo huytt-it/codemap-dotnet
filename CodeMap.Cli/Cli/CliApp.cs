@@ -48,12 +48,17 @@ internal static class CliApp
             Console.Error.WriteLine($"Error: {ex.Message}");
             return 1;
         }
-    }
-
-    private static int NotImplemented(string command, string phase)
-    {
-        Console.Error.WriteLine($"'{command}' is not implemented yet — coming in {phase}.");
-        return 1;
+        // Anything else (a corrupt index file, a locked file, missing read permissions) is not a usage mistake
+        // — the caller here is a colleague, not this tool's author, so it should see one short message instead
+        // of a raw .NET stack trace. --verbose opts back into the full exception for actual debugging: the
+        // filter below only catches when it's absent, so with --verbose the exception propagates unhandled
+        // exactly as before.
+        catch (Exception ex) when (!rest.Contains("--verbose"))
+        {
+            Console.Error.WriteLine($"Error: {ex.Message}");
+            Console.Error.WriteLine("Run with --verbose for the full stack trace.");
+            return 1;
+        }
     }
 
     private static int UnknownCommand(string command)
@@ -92,6 +97,8 @@ internal static class CliApp
               codemap slice    <index> --symbol <docId> [--depth 3] [--out <file.md>]
 
             <index> above means either --index <dir> or --project <name> (resolved via codemap.projects.json).
+
+            Any command accepts --verbose to print the full stack trace on an unexpected error.
 
             See README.md to get started, or docs/CODEMAP-SPEC.md for the design.
             """);

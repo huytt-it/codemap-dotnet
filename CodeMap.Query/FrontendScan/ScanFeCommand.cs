@@ -10,7 +10,7 @@ internal static class ScanFeCommand
 {
     public static int Run(string[] rawArgs)
     {
-        var args = Args.Parse(rawArgs);
+        var args = Args.Parse(rawArgs, options: new[] { "root", "out" }, flags: Array.Empty<string>());
         var root = Path.GetFullPath(args.Require("root"));
         var outDir = Path.GetFullPath(args.Require("out"));
 

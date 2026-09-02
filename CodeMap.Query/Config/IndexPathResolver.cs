@@ -9,6 +9,10 @@ namespace CodeMap.Query.Config;
 /// </summary>
 internal static class IndexPathResolver
 {
+    /// <summary>Option names every command that calls <see cref="Resolve"/> must include in its own Args.Parse
+    /// whitelist — shared here so none of them can forget one and silently break, say, --project.</summary>
+    public static readonly string[] OptionNames = { "index", "project", "config" };
+
     public static string Resolve(Args args)
     {
         var explicitIndex = args.GetOrDefault("index");

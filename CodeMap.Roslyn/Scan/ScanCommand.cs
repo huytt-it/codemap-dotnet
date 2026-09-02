@@ -6,7 +6,7 @@ internal static class ScanCommand
 {
     public static int Run(string[] rawArgs)
     {
-        var args = Args.Parse(rawArgs);
+        var args = Args.Parse(rawArgs, options: new[] { "solution", "out" }, flags: new[] { "syntax-only", "include-external" });
         var solutionPath = Path.GetFullPath(args.Require("solution"));
         var outDir = args.Require("out");
         var syntaxOnly = args.HasFlag("syntax-only");

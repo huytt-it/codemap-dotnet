@@ -55,6 +55,81 @@ public class InterfaceConfidenceTests
         Assert.IsFalse(result.BlindSpots.Any(b => b.Contains("NOT the one actually DI-bound", StringComparison.Ordinal)));
     }
 
+    /// <summary>
+    /// Regression test for the BFS-order bug fixed alongside these classifications: a node is only ever
+    /// discovered (and enqueued) once, so if the BFS happens to reach it FIRST through an unconfirmed path, a
+    /// second, perfectly confirmed path to the same node used to be silently ignored — the result depended on
+    /// which of two equally real paths got dequeued first. Here Bridge is reachable both via Q (an unconfirmed
+    /// interface hop) and via P (an ordinary confirmed call) at the same depth; the edges are deliberately
+    /// ordered so the unconfirmed path (through Q) is discovered first, which is exactly the ordering that
+    /// mislabeled Bridge before the fix. Bridge must read as confirmed regardless: a confirmed path exists.
+    /// </summary>
+    [TestMethod]
+    public void Node_reached_via_both_an_unconfirmed_and_a_confirmed_path_is_marked_confirmed()
+    {
+        var index = BuildDiamondIndex();
+        var result = ImpactEngine.Traverse(index, "M:Ns.Root.Method", depth: 3);
+
+        var bridge = result.IntermediateCallers.Single(c => c.Id == "M:Ns.Bridge.Method");
+        Assert.IsTrue(bridge.IsConfirmedBinding, "Bridge has a confirmed path via P and must not be tainted just because an unconfirmed path via Q was discovered first");
+
+        var q = result.IntermediateCallers.Single(c => c.Id == "M:Ns.Q.Method");
+        Assert.IsFalse(q.IsConfirmedBinding, "Q's only path to Root is the unconfirmed interface edge");
+    }
+
+    private static ImpactIndex BuildDiamondIndex()
+    {
+        SymbolRecord Sym(string id, string name, string containingType) => new()
+        {
+            Id = id,
+            Kind = "Method",
+            Name = name,
+            ContainingType = containingType,
+            Project = "SampleProj",
+            File = "x.cs",
+            Line = 1,
+            Accessibility = "Public",
+        };
+
+        var symbols = new[]
+        {
+            Sym("M:Ns.Root.Method", "Method", "Ns.RootImpl"),
+            Sym("M:Ns.Q.Method", "Method", "Ns.Q"),
+            Sym("M:Ns.P.Method", "Method", "Ns.P"),
+            Sym("M:Ns.Bridge.Method", "Method", "Ns.Bridge"),
+        };
+
+        // Order matters here: Q's (unconfirmed) edge into Root is listed before P's (confirmed) one, so the BFS
+        // discovers Root's callers in that same order — Q first — which is the ordering that exposed the bug.
+        var edges = new List<EdgeRecord>
+        {
+            new() { From = "M:Ns.Q.Method", To = "M:Ns.Root.Method", Kind = "call", File = "q.cs", Line = 1, Via = "interface" },
+            new() { From = "M:Ns.P.Method", To = "M:Ns.Root.Method", Kind = "call", File = "p.cs", Line = 1 },
+            new() { From = "M:Ns.Bridge.Method", To = "M:Ns.Q.Method", Kind = "call", File = "bridge.cs", Line = 1 },
+            new() { From = "M:Ns.Bridge.Method", To = "M:Ns.P.Method", Kind = "call", File = "bridge.cs", Line = 2 },
+        };
+
+        return new ImpactIndex
+        {
+            SymbolsById = symbols.ToDictionary(s => s.Id, StringComparer.Ordinal),
+            ReverseEdges = edges.GroupBy(e => e.To, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal),
+            EntryPointsById = new(),
+            Tickets = new(),
+            CoChanges = new(),
+            FrontendCallsById = new(),
+            ApiLinksByBackendId = new(),
+            Diagnostics = null,
+            Meta = null,
+            // Q's interface call structurally could reach either RootImpl or OtherImpl; DI evidence confirms it
+            // actually binds to OtherImpl, so the edge into Root (whose type is RootImpl) is a known-wrong answer.
+            ConfirmedImplementationTypes = new(StringComparer.Ordinal) { "Ns.OtherImpl" },
+            InterfaceCallSiteCandidateTypes = new(StringComparer.Ordinal)
+            {
+                ["M:Ns.Q.Method|q.cs|1"] = new() { "Ns.RootImpl", "Ns.OtherImpl" },
+            },
+        };
+    }
+
     private static ImpactIndex BuildTwoImplIndex(HashSet<string>? confirmedTypes = null)
     {
         SymbolRecord Sym(string id, string name, string containingType) => new()

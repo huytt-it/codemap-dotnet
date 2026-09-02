@@ -16,6 +16,11 @@ public static partial class WhereEngine
 {
     private const int MaxResults = 10;
 
+    /// <summary>Cap on printed reasons per candidate. Without it, a "God file" a couple hundred tickets happen
+    /// to touch would print a couple hundred near-identical reason lines — noise for a human, and wasted tokens
+    /// for the tool's actual purpose (attaching `where` output to an AI chat, spec section 1).</summary>
+    private const int MaxReasons = 5;
+
     // No formula is given in the spec (same situation as ImpactEngine's risk score) — this ordering is a
     // judgment call: a past ticket's message is the most direct evidence a change was about this exact business
     // concept; a route/FE feature name is structurally closer to business language than a raw method name; a
@@ -33,31 +38,61 @@ public static partial class WhereEngine
         var queryTokens = Tokenize(query);
         if (queryTokens.Count == 0) return new();
 
-        var scores = new Dictionary<string, (double Score, List<string> Reasons)>(StringComparer.Ordinal);
+        // Raw (score, reason) hits per symbol, kept separate rather than summed as they arrive: a symbol a
+        // couple hundred tickets happen to touch (a "God file") must not out-rank one two tickets genuinely
+        // agree on just by sheer count, so the count-vs-relevance tradeoff is resolved once, in BuildCandidate,
+        // after every source has reported in.
+        var hits = new Dictionary<string, List<(double Score, string Reason)>>(StringComparer.Ordinal);
         void Add(string symbolId, double score, string reason)
         {
             if (score <= 0 || !index.SymbolsById.ContainsKey(symbolId)) return;
-            if (!scores.TryGetValue(symbolId, out var entry)) entry = (0, new List<string>());
-            entry.Score += score;
-            entry.Reasons.Add(reason);
-            scores[symbolId] = entry;
+            if (!hits.TryGetValue(symbolId, out var list)) hits[symbolId] = list = new();
+            list.Add((score, reason));
         }
 
         ScoreTickets(index, queryTokens, Add);
         ScoreRoutesAndFeatures(index, queryTokens, Add);
         ScoreNameSubstrings(index, queryTokens, Add);
 
-        return scores
-            .Select(kv => new WhereCandidate(kv.Key, DisplayNameOf(index, kv.Key), Math.Round(kv.Value.Score, 2), kv.Value.Reasons))
+        return hits
+            .Select(kv => BuildCandidate(index, kv.Key, kv.Value))
             .OrderByDescending(c => c.Score)
             .ThenBy(c => c.SymbolId, StringComparer.Ordinal)
             .Take(MaxResults)
             .ToList();
     }
 
-    /// <summary>Source 2 (spec section 3): "ticket-files.jsonl — ticket cũ có mô tả tương tự đã sửa file nào". The only signal that can realistically bridge a natural-language query to English identifiers — a human already wrote that bridge once, in the commit message. It therefore only fires when the query is in the same language the team writes commits in.</summary>
-    private static void ScoreTickets(ImpactIndex index, List<string> queryTokens, Action<string, double, string> add)
+    /// <summary>
+    /// Combines every raw hit one symbol received into the one score and bounded reason list it's shown with.
+    /// The strongest single hit sets the base score; each further corroborating hit adds a shrinking log bonus
+    /// (log2(1) = 0, so a symbol with only one hit is scored exactly as before — this only changes symbols with
+    /// several). That keeps "more historical evidence" a plus without letting raw touch-count on a God file
+    /// drown out symbols with fewer, more targeted matches.
+    /// </summary>
+    private static WhereCandidate BuildCandidate(ImpactIndex index, string symbolId, List<(double Score, string Reason)> rawHits)
     {
+        var sorted = rawHits.OrderByDescending(h => h.Score).ToList();
+        var score = sorted[0].Score + Math.Log2(sorted.Count);
+
+        var reasons = sorted.Take(MaxReasons).Select(h => h.Reason).ToList();
+        if (sorted.Count > MaxReasons) reasons.Add($"(+{sorted.Count - MaxReasons} more reason(s))");
+
+        return new WhereCandidate(symbolId, DisplayNameOf(index, symbolId), Math.Round(score, 2), reasons);
+    }
+
+    /// <summary>Source 2 (spec section 3): "ticket-files.jsonl — ticket cũ có mô tả tương tự đã sửa file nào". The only signal that can realistically bridge a natural-language query to English identifiers — a human already wrote that bridge once, in the commit message. It therefore only fires when the query is in the same language the team writes commits in.</summary>
+    private static void ScoreTickets(ImpactIndex index, HashSet<string> queryTokens, Action<string, double, string> add)
+    {
+        // Symbol names get tokenized at most once per Search call, not once per (ticket, symbol) pair — on a
+        // large codebase the same file (and its symbols) is touched by many tickets, and re-running the
+        // tokenizer over identical input on every one of them was the dominant cost of this method.
+        var nameTokenCache = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        HashSet<string> NameTokensOf(SymbolRecord symbol)
+        {
+            if (!nameTokenCache.TryGetValue(symbol.Id, out var tokens)) nameTokenCache[symbol.Id] = tokens = Tokenize(symbol.Name);
+            return tokens;
+        }
+
         foreach (var ticket in index.Tickets)
         {
             var messageTokens = Tokenize(ticket.Message);
@@ -69,13 +104,16 @@ public static partial class WhereEngine
 
             foreach (var file in ticket.Files)
             {
-                foreach (var symbol in index.SymbolsById.Values.Where(s => s.File == file))
+                // SymbolsByFile is a pre-built lookup (ImpactIndex.SymbolsByFile), not a scan of every symbol in
+                // the index for every file a ticket touched — on a large codebase that scan, repeated across
+                // thousands of tickets, was the single biggest cost of a `where` query.
+                foreach (var symbol in index.SymbolsByFile[file])
                 {
                     // Tokenize the name rather than lowercasing it: that way an identifier written fullwidth in
                     // the message still matches (NFKC), and a non-Latin identifier is compared bigram-to-bigram
                     // like everything else. Empty means the name was too short to survive tokenizing — no bonus,
                     // otherwise "all tokens present" would be vacuously true for every symbol.
-                    var nameTokens = Tokenize(symbol.Name);
+                    var nameTokens = NameTokensOf(symbol);
                     var namedInMessage = nameTokens.Count > 0 && nameTokens.All(messageTokens.Contains);
                     var score = namedInMessage ? baseScore * NamedInTicketBonus : baseScore;
                     var reason = exactTicketId
@@ -88,7 +126,7 @@ public static partial class WhereEngine
     }
 
     /// <summary>Source 1 (spec section 3): "Tên feature phía FE và route API (orders/cancel gần ngôn ngữ nghiệp vụ hơn tên method)".</summary>
-    private static void ScoreRoutesAndFeatures(ImpactIndex index, List<string> queryTokens, Action<string, double, string> add)
+    private static void ScoreRoutesAndFeatures(ImpactIndex index, HashSet<string> queryTokens, Action<string, double, string> add)
     {
         foreach (var ep in index.EntryPointsById.Values)
         {
@@ -111,7 +149,7 @@ public static partial class WhereEngine
     }
 
     /// <summary>Source 3 (spec section 3): "Tên type/method khớp chuỗi con" — weakest signal, mainly useful when the query is already code-like (an English term, a class name).</summary>
-    private static void ScoreNameSubstrings(ImpactIndex index, List<string> queryTokens, Action<string, double, string> add)
+    private static void ScoreNameSubstrings(ImpactIndex index, HashSet<string> queryTokens, Action<string, double, string> add)
     {
         foreach (var symbol in index.SymbolsById.Values)
         {
@@ -129,7 +167,7 @@ public static partial class WhereEngine
         return sym.ContainingType != null ? $"{sym.ContainingType}.{sym.Name}" : sym.Name;
     }
 
-    internal static List<string> Tokenize(string text)
+    internal static HashSet<string> Tokenize(string text)
     {
         // NFKC first: folds halfwidth katakana (ｷｬﾝｾﾙ) onto normal katakana (キャンセル), fullwidth Latin (Ｃａｎｃｅｌ)
         // onto ASCII, and composes Vietnamese diacritics — so the same word typed two different ways, by two
@@ -139,7 +177,10 @@ public static partial class WhereEngine
         var tokens = new List<string>();
         foreach (Match m in WordPattern().Matches(normalized))
             AppendRunTokens(m.Value, tokens);
-        return tokens.Distinct().ToList();
+        // A set, not a list: every caller only ever asks "does this token occur" (Contains/All), and on a large
+        // codebase this same set is tested against thousands of query tokens per ticket — O(1) membership beats
+        // a linear scan repeated that many times over.
+        return new HashSet<string>(tokens, StringComparer.Ordinal);
     }
 
     /// <summary>

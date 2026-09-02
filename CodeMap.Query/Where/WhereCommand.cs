@@ -9,7 +9,7 @@ internal static class WhereCommand
 {
     public static int Run(string[] rawArgs)
     {
-        var args = Args.Parse(rawArgs);
+        var args = Args.Parse(rawArgs, options: IndexPathResolver.OptionNames.Concat(new[] { "query" }).ToArray(), flags: Array.Empty<string>());
         var indexDir = IndexPathResolver.Resolve(args);
         var query = args.Require("query");
 

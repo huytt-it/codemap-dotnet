@@ -14,10 +14,15 @@ namespace CodeMap.Tests;
 [TestClass]
 public class WhereEngineCjkTests
 {
+    /// <summary>WhereEngine.Tokenize returns a HashSet (O(1) membership is the whole point in production code),
+    /// but MSTest's CollectionAssert wants the non-generic ICollection that only List implements — this adapts
+    /// without weakening what's actually being asserted (set membership/equivalence, never order).</summary>
+    private static List<string> Tokens(string text) => WhereEngine.Tokenize(text).ToList();
+
     [TestMethod]
     public void Japanese_sentence_splits_into_overlapping_bigrams_not_one_giant_token()
     {
-        var tokens = WhereEngine.Tokenize("注文をキャンセル");
+        var tokens = Tokens("注文をキャンセル");
 
         CollectionAssert.AreEquivalent(
             new[] { "注文", "文を", "をキ", "キャ", "ャン", "ンセ", "セル" },
@@ -91,7 +96,7 @@ public class WhereEngineCjkTests
     [TestMethod]
     public void Katakana_glued_to_a_latin_identifier_splits_at_the_script_boundary()
     {
-        var tokens = WhereEngine.Tokenize("キャンセルOrderService");
+        var tokens = Tokens("キャンセルOrderService");
 
         CollectionAssert.Contains(tokens, "orderservice");
         CollectionAssert.Contains(tokens, "キャ");
@@ -102,23 +107,23 @@ public class WhereEngineCjkTests
     public void Halfwidth_katakana_is_folded_onto_normal_katakana()
     {
         CollectionAssert.AreEquivalent(
-            WhereEngine.Tokenize("キャンセル"),
-            WhereEngine.Tokenize("ｷｬﾝｾﾙ"));
+            Tokens("キャンセル"),
+            Tokens("ｷｬﾝｾﾙ"));
     }
 
     [TestMethod]
     public void Fullwidth_latin_is_folded_onto_ascii()
     {
         CollectionAssert.AreEquivalent(
-            WhereEngine.Tokenize("Cancel"),
-            WhereEngine.Tokenize("Ｃａｎｃｅｌ"));
+            Tokens("Cancel"),
+            Tokens("Ｃａｎｃｅｌ"));
     }
 
     [TestMethod]
     public void A_hiragana_only_bigram_is_dropped_as_a_grammatical_stop_word()
     {
         // でき / きな / ない are inflection, not content — they are what makes 「削除できない」 collide with 「合わない」.
-        var tokens = WhereEngine.Tokenize("削除できない");
+        var tokens = Tokens("削除できない");
 
         CollectionAssert.AreEquivalent(new[] { "削除", "除で" }, tokens);
     }
@@ -126,8 +131,8 @@ public class WhereEngineCjkTests
     [TestMethod]
     public void Two_unrelated_japanese_phrases_no_longer_collide_on_their_shared_negation_ending()
     {
-        var a = WhereEngine.Tokenize("注文の削除ができない不具合を修正");
-        var b = WhereEngine.Tokenize("在庫数が合わない");
+        var a = Tokens("注文の削除ができない不具合を修正");
+        var b = Tokens("在庫数が合わない");
 
         CollectionAssert.AreEqual(Array.Empty<string>(), a.Intersect(b).ToArray());
     }
@@ -137,7 +142,7 @@ public class WhereEngineCjkTests
     {
         // A term genuinely written in hiragana (ひもづけ = "linking") must stay searchable rather than tokenize to
         // nothing — the stop-word rule only applies where the segment has kanji/katakana to carry the meaning.
-        var tokens = WhereEngine.Tokenize("ひもづけ");
+        var tokens = Tokens("ひもづけ");
 
         CollectionAssert.AreEquivalent(new[] { "ひも", "もづ", "づけ" }, tokens);
     }
@@ -146,14 +151,14 @@ public class WhereEngineCjkTests
     public void A_lone_ideograph_survives_the_minimum_length_filter()
     {
         // 金 is a whole word on its own; the length>=2 rule that usefully drops "a"/"I" must not drop it.
-        CollectionAssert.Contains(WhereEngine.Tokenize("金 amount"), "金");
+        CollectionAssert.Contains(Tokens("金 amount"), "金");
     }
 
     [TestMethod]
     public void Space_separated_scripts_still_tokenize_by_word_not_by_bigram()
     {
-        CollectionAssert.AreEquivalent(new[] { "hủy", "đơn", "hàng" }, WhereEngine.Tokenize("hủy đơn hàng"));
-        CollectionAssert.AreEquivalent(new[] { "cancel", "order" }, WhereEngine.Tokenize("Cancel Order"));
+        CollectionAssert.AreEquivalent(new[] { "hủy", "đơn", "hàng" }, Tokens("hủy đơn hàng"));
+        CollectionAssert.AreEquivalent(new[] { "cancel", "order" }, Tokens("Cancel Order"));
     }
 
     [TestMethod]
@@ -161,8 +166,8 @@ public class WhereEngineCjkTests
     {
         // Same word, NFD vs NFC. Before NFKC normalization these were two different tokens that never matched.
         CollectionAssert.AreEquivalent(
-            WhereEngine.Tokenize("hủy".Normalize(System.Text.NormalizationForm.FormD)),
-            WhereEngine.Tokenize("hủy".Normalize(System.Text.NormalizationForm.FormC)));
+            Tokens("hủy".Normalize(System.Text.NormalizationForm.FormD)),
+            Tokens("hủy".Normalize(System.Text.NormalizationForm.FormC)));
     }
 
     private static ImpactIndex BuildIndex(

@@ -20,11 +20,6 @@ public static class ImpactEngine
         var visitedDepth = new Dictionary<string, int>(StringComparer.Ordinal) { [symbolId] = 0 };
         var predecessors = new Dictionary<string, string>(StringComparer.Ordinal);
         var edgesUsed = new List<EdgeRecord>();
-        // Nodes FIRST discovered through a via:"interface" edge docs/BENCHMARK-INTERFACE-EXPANSION.md's audit
-        // could positively confirm is over-inference (di-confirmed.json shows a DIFFERENT sibling implementation
-        // is the one actually DI-bound at that call site) — never populated for "we don't know" cases, only
-        // provably-wrong ones, so this can't cry wolf on a type with no DI registration info at all.
-        var unconfirmedBinding = new HashSet<string>(StringComparer.Ordinal);
         var queue = new Queue<string>();
         queue.Enqueue(symbolId);
 
@@ -41,16 +36,11 @@ public static class ImpactEngine
                 if (visitedDepth.ContainsKey(edge.From)) continue;
                 visitedDepth[edge.From] = currentDepth + 1;
                 predecessors[edge.From] = current;
-                // Taint propagates forward through the BFS: if `current` itself was only reached via an
-                // unconfirmed interface hop, everything reached FROM it (regardless of THIS edge's own kind)
-                // is equally speculative — the whole path back to the target depends on that earlier hop
-                // being real, which it isn't confirmed to be.
-                var thisEdgeUnconfirmed = edge.Via == "interface" && !IsConfirmedInterfaceEdge(index, edge);
-                if (thisEdgeUnconfirmed || unconfirmedBinding.Contains(current))
-                    unconfirmedBinding.Add(edge.From);
                 queue.Enqueue(edge.From);
             }
         }
+
+        var unconfirmedBinding = ComputeUnconfirmedBinding(index, symbolId, visitedDepth.Keys, edgesUsed);
 
         var directFanIn = index.ReverseEdges.TryGetValue(symbolId, out var direct) ? direct.Count : 0;
 
@@ -161,6 +151,48 @@ public static class ImpactEngine
     /// interface has no confirmed binding at all (assembly-scanning DI, or never registered), this returns
     /// true — "unknown" must not be treated the same as "known wrong".
     /// </summary>
+    /// <summary>
+    /// A node is confirmed if AT LEAST ONE path from the root to it, anywhere in the reached subgraph, uses only
+    /// confirmed edges — not merely the specific path the outer BFS in <see cref="Traverse"/> happened to
+    /// discover it through first. The original approach tainted a node the instant ANY unconfirmed path reached
+    /// it, and, because a node is only ever discovered (and enqueued) once, a later confirmed path to that same
+    /// node was silently ignored — so the result depended on which of several equally real paths the BFS visited
+    /// first, and a node with a perfectly good confirmed calling path could be mislabeled "other possible
+    /// implementation" (docs/BENCHMARK-INTERFACE-EXPANSION.md) just because an unconfirmed one was enumerated
+    /// earlier.
+    ///
+    /// This is a second, independent propagation over the same edge set the BFS already collected
+    /// (<paramref name="edgesUsed"/> — every edge between two reached nodes, regardless of which one first
+    /// discovered either endpoint): starting confirmed at the root, follow only confirmed edges outward, and
+    /// keep enqueuing newly-confirmed nodes until nothing changes. Order-independent by construction — once a
+    /// node is marked confirmed it stays that way, so it no longer matters which edge got processed first.
+    /// </summary>
+    private static HashSet<string> ComputeUnconfirmedBinding(ImpactIndex index, string symbolId, IEnumerable<string> reachedIds, List<EdgeRecord> edgesUsed)
+    {
+        var edgesByTarget = edgesUsed.GroupBy(e => e.To, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+
+        var confirmed = new HashSet<string>(StringComparer.Ordinal) { symbolId };
+        var queue = new Queue<string>();
+        queue.Enqueue(symbolId);
+
+        while (queue.Count > 0)
+        {
+            var node = queue.Dequeue();
+            if (!edgesByTarget.TryGetValue(node, out var outgoing)) continue;
+
+            foreach (var edge in outgoing)
+            {
+                if (confirmed.Contains(edge.From)) continue;
+                var edgeConfirmed = edge.Via != "interface" || IsConfirmedInterfaceEdge(index, edge);
+                if (!edgeConfirmed) continue;
+                confirmed.Add(edge.From);
+                queue.Enqueue(edge.From);
+            }
+        }
+
+        return reachedIds.Where(id => !confirmed.Contains(id)).ToHashSet(StringComparer.Ordinal);
+    }
+
     private static bool IsConfirmedInterfaceEdge(ImpactIndex index, EdgeRecord edge)
     {
         var key = $"{edge.From}|{edge.File}|{edge.Line}";

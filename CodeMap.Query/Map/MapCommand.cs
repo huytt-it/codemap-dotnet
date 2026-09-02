@@ -9,7 +9,7 @@ internal static class MapCommand
 {
     public static int Run(string[] rawArgs)
     {
-        var args = Args.Parse(rawArgs);
+        var args = Args.Parse(rawArgs, options: IndexPathResolver.OptionNames.Concat(new[] { "out" }).ToArray(), flags: Array.Empty<string>());
         var indexDir = IndexPathResolver.Resolve(args);
         var outDir = Path.GetFullPath(args.Require("out"));
 

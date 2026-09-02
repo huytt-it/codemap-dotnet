@@ -22,6 +22,12 @@
     <ToolCommandName>codemap</ToolCommandName>
     <PackageId>CodeMap.Cli</PackageId>
     <Version>1.0.0</Version>
+    <!-- PackageVersion (not Version) carries the timestamp: Version also drives AssemblyVersion, and a
+         yyMMdd/HHmm value there overflows the 65534 max per-component and fails the build (CS7034). NuGet only
+         reinstalls a global tool when the package version changes, and every prior local build produced the
+         same "1.0.0", so a "tool update" from source silently kept the old binary even after a fresh pack.
+         A build-time timestamp makes every pack a distinct, always-newer version. -->
+    <PackageVersion>1.$([System.DateTime]::UtcNow.ToString(yyMMdd)).$([System.DateTime]::UtcNow.ToString(HHmm))</PackageVersion>
     <PackageOutputPath>$(MSBuildThisFileDirectory)..\nupkg</PackageOutputPath>
     <Description>Offline .NET codebase index for AI assistants: scan a solution and query "what does changing this affect?"</Description>
   </PropertyGroup>
