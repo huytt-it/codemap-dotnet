@@ -79,7 +79,7 @@ Toàn bộ test phải pass. Nếu đỏ ngay từ máy mới clone, kiểm tra 
 
 ### Lười đọc? Bảo AI setup hộ
 
-Nếu bạn dùng Copilot / Claude Code / Cursor, mở [docs/SETUP-PROMPT.md](docs/SETUP-PROMPT.md), copy nguyên khối prompt trong đó dán vào chat AI — nó sẽ tự dò SDK, chọn cách cài phù hợp với quyền hạn máy bạn, quét repo và tự điền đường dẫn vào file hướng dẫn cho AI.
+Clone repo này về (bước "Lấy source code" ở trên) rồi mở [docs/SETUP-PROMPT.md](docs/SETUP-PROMPT.md), copy nguyên khối prompt trong đó dán vào Copilot / Claude Code / Cursor — nó sẽ tự dò SDK, chọn cách cài phù hợp với quyền hạn máy bạn, khai báo `codemap.projects.json` và quét. Prompt cố tình **cấm agent tự `git clone`**: bạn clone, rồi chỉ đường dẫn cho nó.
 
 ---
 

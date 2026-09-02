@@ -1,6 +1,13 @@
 # Prompt bảo AI setup CodeMap thay bạn
 
-Copy **toàn bộ khối trong khung bên dưới** dán vào Copilot Chat (chế độ Agent), Claude Code, Cursor —
+**Làm trước, tự tay:** clone repo này về máy. Prompt bên dưới **không** cho agent tự clone — nó sẽ hỏi bạn
+đường dẫn tới thư mục đã có.
+
+```bash
+git clone https://github.com/huytt-it/codemap-dotnet.git
+```
+
+Sau đó copy **toàn bộ khối trong khung bên dưới** dán vào Copilot Chat (chế độ Agent), Claude Code, Cursor —
 bất cứ AI nào chạy được lệnh terminal. Không cần sửa gì trước: prompt tự dò môi trường và tự hỏi lại bạn
 khi thiếu thông tin.
 
@@ -10,9 +17,11 @@ chạy tay từng bước — vẫn dùng được, chỉ chậm hơn.
 ---
 
 ```
-Bạn giúp tôi cài đặt CodeMap (https://github.com/huytt-it/codemap-dotnet) trên máy này và cấu hình
-cho AI agent dùng được. Làm tuần tự, mỗi bước kiểm chứng bằng lệnh thật rồi mới sang bước sau.
-Không giả định kết quả, không bịa đường dẫn.
+Bạn giúp tôi cài đặt CodeMap trên máy này và cấu hình cho AI agent dùng được. Làm tuần tự, mỗi bước
+kiểm chứng bằng lệnh thật rồi mới sang bước sau. Không giả định kết quả, không bịa đường dẫn.
+
+QUAN TRỌNG: tôi ĐÃ TỰ CLONE source CodeMap về máy rồi. TUYỆT ĐỐI KHÔNG chạy `git clone`, không tải
+source từ đâu về, không tự tạo lại project. Bạn chỉ làm việc trên thư mục tôi chỉ ra ở Bước 2.
 
 ## Bước 1 — Kiểm tra môi trường
 Chạy `dotnet --list-sdks` và `git --version`.
@@ -20,14 +29,23 @@ Chạy `dotnet --list-sdks` và `git --version`.
 - Nếu không có SDK nào: dừng lại, đưa tôi link tải, đừng tự tải về.
 Báo tôi biết bạn thấy SDK nào.
 
-## Bước 2 — Lấy source và build
-Hỏi tôi muốn clone CodeMap vào thư mục nào (đừng tự chọn). Sau đó:
-  git clone https://github.com/huytt-it/codemap-dotnet.git
-  cd codemap-dotnet
+## Bước 2 — Build từ source tôi đã clone sẵn
+Hỏi tôi đường dẫn tới thư mục CodeMap tôi đã clone. Đừng đoán, đừng đi dò khắp ổ đĩa, và
+nhắc lại: đừng clone.
+
+Trước khi build, xác nhận đúng thư mục bằng cách kiểm tra có đủ 3 thứ sau (không đủ thì báo tôi,
+đừng tự sửa):
+  - file `CodeMap.slnx`
+  - thư mục `CodeMap.Cli`
+  - thư mục `tests/CodeMap.Tests`
+
+Rồi từ chính thư mục đó:
   dotnet build CodeMap.Cli -c Release
 Nếu build lỗi, dán nguyên văn lỗi cho tôi, đừng tự sửa code.
 
 ## Bước 3 — Cài lệnh `codemap` (thử theo đúng thứ tự này)
+Vẫn đứng trong thư mục CodeMap ở Bước 2.
+
 Cách A — ưu tiên, không cần quyền admin, không sửa PowerShell profile:
   dotnet pack CodeMap.Cli -c Release
   dotnet tool install --global --add-source ./nupkg CodeMap.Cli
@@ -107,7 +125,9 @@ Cuối cùng tổng kết ngắn gọn cho tôi:
 
 ## Ghi chú cho người dùng
 
-- Prompt này **không** bảo AI sửa PowerShell profile hay PATH hệ thống — đó là chủ ý, vì nhiều máy công ty
+- Prompt này **cấm AI tự `git clone`** — bạn tự clone, rồi chỉ đường dẫn cho nó. Chủ ý: bạn kiểm soát
+  source lấy từ đâu và nằm ở đâu, agent không tự tải code về máy bạn.
+- Prompt này **không** bảo AI sửa PowerShell profile hay PATH hệ thống — cũng là chủ ý, vì nhiều máy công ty
   chặn. Nếu `dotnet tool install` cũng bị chặn thì Cách B (gọi thẳng dll) luôn chạy được.
 - Quét **nhiều repo**: thêm nhiều entry vào mảng `projects` của cùng một `codemap.projects.json`, rồi `codemap sync --all`. CodeMap chỉ cài một lần.
 - Index không tự cập nhật. Xem [README, Phần 4](../README.md) để biết khi nào cần quét lại.
