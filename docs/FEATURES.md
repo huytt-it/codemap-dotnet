@@ -94,9 +94,32 @@ Ngược lại, endpoint backend không FE nào gọi cũng được liệt kê 
 | **Ticket cũ** | Mã ticket trong commit message → đã từng sửa file nào |
 | **File hay sửa kèm nhau** | Cặp file thường xuyên đổi chung, kèm chỉ số `strength` |
 
-Lọc nhiễu tự động: bỏ commit đụng >50 file (merge, format toàn repo), chỉ tính file `.cs .ts .js .html .sql .json .config`, bỏ cặp co-change xuất hiện <3 lần.
+### Đơn vị công việc là một lần tích hợp vào nhánh chính, không phải một commit
 
-> ⚠ Dữ liệu git phản ánh **lịch sử**, không phải cấu trúc hiện tại — file đã xóa/đổi tên vẫn xuất hiện.
+`scan-git` đọc `git log --first-parent --diff-merges=first-parent --name-status -M`. Ba lựa chọn, mỗi cái sửa một lỗ hổng đo được trên repo thật:
+
+| Cờ | Sửa gì | Đo trên eShopOnWeb |
+|---|---|---|
+| `--diff-merges=first-parent` | `git log` thường **không sinh danh sách file cho merge commit**, nên mọi merge đóng góp con số 0 | 36/165 ticket (22%) **chỉ tồn tại trong message merge** |
+| `--first-parent` | Đi theo đúng dòng tích hợp, nên đọc diff của merge không đếm trùng các commit trong nhánh | 825 commit → 503 đơn vị |
+| `-M` (và quy đường dẫn về tên hiện tại) | Rename làm lịch sử một file bị cắt đôi; đường dẫn cũ không bao giờ khớp `symbols.jsonl` vì file đó chỉ chứa file còn tồn tại | **53% đường dẫn trong lịch sử không còn tồn tại**, 110 cặp rename truy được |
+
+Với team đặt tên nhánh theo ticket (`SHO_1234-fix-cancel`), mã ticket nằm trong message merge `Merge pull request #456 from org/SHO_1234-fix-cancel` — commit trong nhánh có thể chỉ ghi "wip". Không đọc diff của merge thì mất trắng ticket đó.
+
+> `--diff-merges` cần git ≥ 2.31. Git cũ hơn thì tool nói rõ và quay về cách cũ (merge không đóng góp file), phần còn lại vẫn chạy.
+
+Lọc nhiễu tự động: bỏ đơn vị đụng **>100 file** (format toàn repo), chỉ tính file `.cs .cshtml .razor .ts .js .html .sql .json .config`, bỏ cặp co-change xuất hiện <3 lần.
+
+Ngưỡng trước đây là 50, đặt ra để bỏ ba thứ: merge, rename hàng loạt, format toàn repo. Hai thứ đầu giờ được xử lý đúng bản chất (merge là đơn vị, rename được nhận diện là rename), chỉ còn format toàn repo cần cắt theo kích thước. Đo phân bố trên eShopOnWeb: p95 = 47 file, p98 = 69 — ngưỡng 50 đang loại 4% lịch sử, gồm cả pull request lớn hợp lệ; ngưỡng 100 chỉ loại 0,8% (các đơn vị 150–241 file).
+
+**Kết quả đo được sau khi đổi**, cùng repo, cùng lệnh:
+
+| | Ticket | Cặp co-change |
+|---|---|---|
+| eShop (squash-merge) | 85 → **90** | 67 → **117** |
+| eShopOnWeb (merge PR) | 122 → **165** | ~584 → **1414** |
+
+> ⚠ Dữ liệu git vẫn phản ánh **lịch sử**, không phải cấu trúc hiện tại — file đã xóa vẫn xuất hiện. File đã **đổi tên** thì nay đã được quy về tên hiện tại.
 
 ### Khi nào `scan-git` không chạy được, hoặc chạy được nhưng dữ liệu mỏng
 
@@ -120,9 +143,7 @@ Cách kiểm nhanh: chạy `git log --pretty=format:%s -80`, rồi sau khi `scan
 Chạy xong, báo thành công, nhưng dữ liệu thiếu — cần tự biết:
 
 - **Shallow clone** (`git clone --depth`, checkout mặc định của nhiều CI): lịch sử bị cắt cụt.
-- **Commit gộp >50 file bị bỏ hoàn toàn.** Team squash cả feature vào một commit thì rất nhiều commit rơi vào ngưỡng này.
-- **`.cshtml` và `.razor` không nằm trong whitelist đuôi file** — lịch sử Razor Page/View không được ghi nhận.
-- **File đổi tên**: `git log --name-only` chạy không kèm `--follow`, nên lịch sử đứt tại chỗ rename.
+- **Đơn vị đụng >100 file vẫn bị bỏ hoàn toàn.** Hiếm hơn ngưỡng 50 cũ nhiều, nhưng một lần format toàn repo kèm sửa logic thật thì phần logic đó cũng mất theo.
 
 ### Đường dẫn phải khớp với `scan`, nếu không dữ liệu git thành vô dụng
 

@@ -12,10 +12,22 @@ namespace CodeMap.Query.Git;
 /// </summary>
 internal static class ScanGitCommand
 {
+    // .cshtml/.razor belong here for the same reason .html does: they are edited as part of the same unit of
+    // work as the C# behind them, and leaving them out erased the entire edit history of every Razor Page and
+    // view — the dominant UI style in the codebases this tool targets.
     private static readonly HashSet<string> AllowedExtensions =
-        new(StringComparer.OrdinalIgnoreCase) { ".cs", ".ts", ".js", ".html", ".sql", ".json", ".config" };
+        new(StringComparer.OrdinalIgnoreCase)
+        { ".cs", ".cshtml", ".razor", ".ts", ".js", ".html", ".sql", ".json", ".config" };
 
-    private const int NoiseFileThreshold = 50;
+    /// <summary>
+    /// Spec section 5 set this to 50 to drop three things: merge commits, mass renames, and repo-wide
+    /// reformatting. GitLogRunner now handles the first two structurally — a merge is the unit of work rather
+    /// than noise, and a rename is recognised as a rename — leaving only bulk reformatting for a size cut to
+    /// catch. Measured on eShopOnWeb's integration units: p95 is 47 files and p98 is 69, so 50 was discarding
+    /// 4% of history including ordinary large pull requests. 100 drops 0.8% — the genuine outliers, up to 241
+    /// files — and keeps the rest.
+    /// </summary>
+    private const int NoiseFileThreshold = 100;
     private const int MinCoChangeTogether = 3;
     private const int TicketPatternProbeCommitCount = 200;
 

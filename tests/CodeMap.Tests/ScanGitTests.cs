@@ -42,8 +42,8 @@ public class ScanGitTests
     public void Commit_with_only_disallowed_extensions_contributes_nothing()
     {
         var repo = GitFixtureHelper.NewRepo();
-        // .md is not in the allowed extension list (.cs .ts .js .html .sql .json .config) — this commit's only
-        // file gets filtered out entirely, so ticket 9999 must not appear at all.
+        // .md is not in the allowed extension list — this commit's only file gets filtered out entirely, so
+        // ticket 9999 must not appear at all.
         GitFixtureHelper.Commit(repo, "fix #9999 readme only", ("notes.md", "notes"));
         GitFixtureHelper.Commit(repo, "fix #1234 real change", ("a.cs", "class A {}"));
 
@@ -54,11 +54,11 @@ public class ScanGitTests
         Assert.AreEqual("1234", tickets[0].Ticket);
     }
 
-    [TestMethod] // spec: "Bỏ commit đụng hơn 50 file (merge, rename hàng loạt, format toàn repo)"
-    public void Bulk_commit_over_50_files_is_excluded_from_ticket_files()
+    [TestMethod] // spec: drop repo-wide reformatting. Merges and mass renames, the other two cases the spec named, are now handled structurally in GitLogRunner.
+    public void Bulk_commit_over_the_noise_threshold_is_excluded_from_ticket_files()
     {
         var repo = GitFixtureHelper.NewRepo();
-        GitFixtureHelper.CommitManyFiles(repo, "fix #1234 mass reformat", 60);
+        GitFixtureHelper.CommitManyFiles(repo, "fix #1234 mass reformat", 120);
 
         var outDir = RunScanGit(repo);
         // The commit message matches the ticket pattern (so the probe check passes, exit code 0), but the noise
@@ -66,6 +66,70 @@ public class ScanGitTests
         var path = Path.Combine(outDir, "index", "ticket-files.jsonl");
         Assert.IsTrue(File.Exists(path));
         Assert.AreEqual(0, JsonlReader.Read<TicketFileRecord>(path).Count);
+    }
+
+    [TestMethod] // 50 was cutting off ordinary large pull requests (eShopOnWeb: p95 = 47 files, p98 = 69)
+    public void Large_but_realistic_commit_below_the_threshold_is_kept()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.CommitManyFiles(repo, "fix #1234 big but legitimate feature", 60);
+
+        var tickets = ReadTickets(RunScanGit(repo));
+
+        Assert.AreEqual(60, tickets.Single(t => t.Ticket == "1234").Files.Count);
+    }
+
+    [TestMethod] // a plain `git log --name-only` emits no file list for a merge commit, so the whole unit of work vanished
+    public void Merge_commit_contributes_the_files_merged_by_it()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1000 initial", ("a.cs", "class A {}"));
+        GitFixtureHelper.CommitOnBranchAndMerge(
+            repo, "feature", "wip, no ticket here", "Merge pull request #9 from org/SHO_1234-fix-cancel",
+            ("Orders/Cancel.cs", "class Cancel {}"));
+
+        var tickets = ReadTickets(RunScanGitWithPattern(repo, @"([A-Z][A-Z0-9]*_\d+)"));
+
+        // The ticket ID exists only in the merge message (via the branch name); the branch commit says "wip".
+        CollectionAssert.AreEquivalent(new[] { "Orders/Cancel.cs" }, tickets.Single(t => t.Ticket == "SHO_1234").Files);
+    }
+
+    [TestMethod] // a path that no longer exists can never join to symbols.jsonl, which only holds files that do
+    public void History_before_a_rename_is_reported_under_the_current_file_name()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 work under the old name", ("Old.cs", "class X {}"));
+        GitFixtureHelper.Rename(repo, "Old.cs", "New.cs", "fix #1234 rename it");
+
+        var ticket = ReadTickets(RunScanGit(repo)).Single(t => t.Ticket == "1234");
+
+        CollectionAssert.AreEquivalent(new[] { "New.cs" }, ticket.Files);
+    }
+
+    [TestMethod] // renames chain: history recorded under the first name must survive every later rename
+    public void Two_successive_renames_both_resolve_to_the_final_name()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 original", ("First.cs", "class X {}"));
+        GitFixtureHelper.Rename(repo, "First.cs", "Second.cs", "fix #1234 rename once");
+        GitFixtureHelper.Rename(repo, "Second.cs", "Third.cs", "fix #1234 rename twice");
+
+        var ticket = ReadTickets(RunScanGit(repo)).Single(t => t.Ticket == "1234");
+
+        CollectionAssert.AreEquivalent(new[] { "Third.cs" }, ticket.Files);
+    }
+
+    [TestMethod] // Razor is the dominant UI style in the codebases this tool targets; its edit history was being dropped entirely
+    public void Razor_and_cshtml_files_are_part_of_a_ticket()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 basket screen",
+            ("Pages/Basket.cshtml", "@page"), ("Components/Cart.razor", "@code {}"), ("BasketService.cs", "class B {}"));
+
+        var ticket = ReadTickets(RunScanGit(repo)).Single(t => t.Ticket == "1234");
+
+        CollectionAssert.AreEquivalent(
+            new[] { "Pages/Basket.cshtml", "Components/Cart.razor", "BasketService.cs" }, ticket.Files);
     }
 
     [TestMethod] // spec: "Bỏ cặp co-change có together < 3"
@@ -306,6 +370,14 @@ public class ScanGitTests
         var exitCode = ScanGitCommand.Run(new[] { "--repo", repoDir, "--out", outDir });
         Assert.AreEqual(0, exitCode);
         return outDir;
+    }
+
+    private static string RunScanGitWithPattern(string repoDir, string ticketPattern)
+    {
+        File.WriteAllText(
+            Path.Combine(repoDir, "codemap.config.json"),
+            System.Text.Json.JsonSerializer.Serialize(new { ticketPattern }));
+        return RunScanGit(repoDir);
     }
 
     private static List<TicketFileRecord> ReadTickets(string outDir)

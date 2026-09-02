@@ -42,6 +42,25 @@ internal static class GitFixtureHelper
         Commit(repoDir, message, files);
     }
 
+    /// <summary>Commits on a side branch and merges it back with --no-ff, so a real merge commit exists — the shape a "merge the PR into main" workflow produces.</summary>
+    public static void CommitOnBranchAndMerge(
+        string repoDir, string branch, string branchCommitMessage, string mergeMessage,
+        params (string FileName, string Content)[] files)
+    {
+        RunGit(repoDir, "checkout", "-q", "-b", branch);
+        Commit(repoDir, branchCommitMessage, files);
+        RunGit(repoDir, "checkout", "-q", "-");
+        RunGit(repoDir, "merge", "-q", "--no-ff", "-m", mergeMessage, branch);
+    }
+
+    /// <summary>Renames a tracked file with `git mv` so git records it as a rename rather than an add plus a delete.</summary>
+    public static void Rename(string repoDir, string from, string to, string message)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(repoDir, to))!);
+        RunGit(repoDir, "mv", from, to);
+        RunGit(repoDir, "commit", "-q", "-m", message);
+    }
+
     private static void RunGit(string dir, params string[] args)
     {
         var psi = new ProcessStartInfo("git")
