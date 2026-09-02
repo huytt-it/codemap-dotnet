@@ -64,6 +64,9 @@ Cách dùng những gì đọc được:
 - **`description`** cho bạn biết codebase đó là gì. Repo nào cũng có thể có nhiều entry.
 - **`commitLanguage`** là ngôn ngữ team viết commit/ticket. **Quyết định trực tiếp** ngôn ngữ
   bạn nên dùng cho `where` — xem mục "Ngôn ngữ" bên dưới.
+- **`frontend`** (có thể không có) là thư mục FE đã được nối với BE của entry đó. **Không có
+  khoá này nghĩa là index không có dữ liệu FE**, không phải "project không có FE" — đừng
+  suy ra điều thứ hai. Xem mục "Link FE↔BE" bên dưới.
 
 > **File này đang áp dụng cho nhiều project khác nhau (đặt ở `~/.copilot/instructions/`
 > — xem đầu file).** Không có nghĩa mọi project đều dùng CodeMap. Nếu workspace hiện tại
@@ -253,6 +256,24 @@ Mọi report đều có mục này. Nếu câu hỏi của tôi rơi vào vùng 
 
 Tool **không bao giờ** nhìn thấy: reflection, stored procedure và SQL, logic runtime và
 feature flag, config theo môi trường, dữ liệu thật trong DB, quan hệ Razor View ↔ ViewModel.
+
+### Link FE↔BE chỉ đúng trong phạm vi một cặp
+
+Một entry trong `codemap.projects.json` nối đúng **1 backend với 1 frontend**. Ba hệ quả khi đọc
+kết quả:
+
+- **Entry không có khoá `frontend`** → index không hề có dữ liệu FE. Câu hỏi kiểu "màn hình nào
+  gọi API này", "sửa endpoint này thì FE nào hỏng" **không trả lời được từ index này**. Nói thẳng
+  là thiếu dữ liệu, và bảo tôi thêm `frontend` vào entry rồi chạy lại `codemap sync --project <tên>`
+  — đừng thay bằng grep FE rồi trình bày như thể đó là dữ liệu link.
+- **"unmatched frontend calls" trong `diagnostics.json` không phải danh sách lỗi.** Nếu FE của tôi
+  gọi nhiều backend, những lời gọi nhắm sang backend khác luôn nằm ở mục này trong entry hiện tại —
+  đúng như thiết kế, vì entry này chỉ biết một backend. Chỉ coi là dấu hiệu bất thường khi lời gọi
+  đó **đáng lẽ phải thuộc** backend đang xét.
+- **Cùng một thư mục FE có thể xuất hiện ở nhiều entry** (mỗi entry ghép nó với một backend khác).
+  Chọn `--project` theo **backend** đang được hỏi, không theo FE. Chọn nhầm entry thì cùng một câu
+  hỏi vẫn chạy được và vẫn ra kết quả, chỉ là kết quả của cặp khác — kiểm `solution` trong entry
+  trước khi tin.
 
 ### Banner staleness ở đầu mỗi file
 

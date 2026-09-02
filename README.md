@@ -79,7 +79,9 @@ Setting up on another machine, or having a colleague clone the repo, means repea
 
 ### Prefer not to read all this? Have an AI do it
 
-Clone this repo (the "Get the source" step above), then open [setup/SETUP-PROMPT.md](setup/SETUP-PROMPT.md) and paste the prompt block it contains into Copilot, Claude Code, or Cursor. It will detect your SDK, choose an install method that matches what your machine's policy allows, declare `codemap.projects.json`, and run the scan. The prompt deliberately **forbids the agent from running `git clone` itself**: you clone, then hand it the path.
+Clone this repo (the "Get the source" step above), then open [setup/SETUP-PROMPT.md](setup/SETUP-PROMPT.md) and paste the prompt block it contains into Copilot, Claude Code, or Cursor. It will detect your SDK, choose an install method that matches what your machine's policy allows, declare `codemap.projects.json`, decide which commands it may run on its own in `codemap.permissions.json`, place `codemap.instructions.md` so an agent picks it up automatically, and run the scan — the same four tasks described in [setup/README.md](setup/README.md). The prompt deliberately **forbids the agent from running `git clone` itself** and from editing your PowerShell profile or system PATH: you clone, then hand it the path.
+
+> **Setting up a second machine:** `codemap.projects.json`, `codemap.permissions.json`, and `codemap.instructions.md` (when placed at `~/.copilot/instructions/`) normally live at `~/.codemap/` and `~/.copilot/instructions/` — **outside this git repo**. Cloning the repo again on a new machine does not bring them along; repeat this AI-driven setup (or copy those files over by hand) on each machine separately. The one exception is `codemap.instructions.md` placed per-repo under `<target-repo>/.github/instructions/` (Option B in [setup/README.md](setup/README.md)) — that copy is committed into the target repo, so it arrives automatically with `git clone` of that repo.
 
 ---
 
@@ -127,10 +129,38 @@ It can live anywhere: inside `setup/`, at a repo root, in a shared workspace dir
 | `output` | Required | Output directory. **The index lives at `<output>/index`**, `MAP.md` at `<output>/MAP.md`. |
 | `description` | — | A description for people (and AI) to understand what this codebase is. |
 | `repo` | — | Git root. Defaults to the solution's own directory if left blank. |
-| `frontend` | — | Angular/TypeScript directory. Leave blank to skip the frontend scan entirely. |
+| `frontend` | — | Angular/TypeScript directory. **Omit the key entirely** when there is no separate frontend — an empty string is not the same thing, it resolves to the directory holding `codemap.projects.json` and scans that. |
 | `commitLanguage` | — | Language the team writes commits in (`ja`/`vi`/`en`/...). Tells an AI agent which language to phrase `where` queries in. |
 
 > Paths can be **relative** — resolved against the location of `codemap.projects.json` itself, not against your current working directory. That means the whole directory tree still works after being copied to another machine.
+
+### One entry describes one (backend, frontend) pair
+
+`link` matches frontend API calls against backend endpoints **inside a single index**, so an entry carries exactly one `solution` and one `frontend`. A frontend that calls several backends, or a backend serving several frontends, is declared as one entry per pair — the same path simply appears in more than one entry:
+
+```json
+{
+  "projects": [
+    {
+      "name": "shop-orders",
+      "solution": "D:/Repos/OrdersService/Orders.sln",
+      "output": "D:/CodeMapIndex/Orders",
+      "frontend": "D:/Repos/Shop.Web"
+    },
+    {
+      "name": "shop-billing",
+      "solution": "D:/Repos/BillingService/Billing.sln",
+      "output": "D:/CodeMapIndex/Billing",
+      "frontend": "D:/Repos/Shop.Web"
+    }
+  ]
+}
+```
+
+Two consequences to know before doing this:
+
+- **Each entry scans independently.** A backend shared by three frontends is scanned three times — there is no shared cache between entries. Scan time grows linearly with the number of pairs, not with the number of distinct repos.
+- **`diagnostics.json` is scoped to its own pair.** In `shop-orders`, every frontend call aimed at Billing appears under "unmatched frontend calls". Those calls are outside the pair being indexed, not broken links. Read that count per pair; it is not a repo-wide health metric.
 
 ### Step 2 — Scan
 
@@ -275,6 +305,30 @@ current HEAD b7e1d04 · 11 commit(s) behind, 6 relevant file(s) changed since th
 ```
 
 Once that number grows, scan again: `codemap sync --project <name>` (or `--all`). It overwrites the old output directory safely. Without a config file, repeat the commands in [Part 2b](#part-2b--manual-scanning-without-the-config-file).
+
+### Adding a frontend to a project that was already scanned
+
+If a project was declared without `frontend` and scanned, adding the key later does not require discarding the existing index. Add it to that entry in `codemap.projects.json`, then either re-run the whole pipeline:
+
+```bash
+codemap sync --project shop
+```
+
+or, when the backend scan is slow and the backend itself has not changed, run only the steps that were skipped:
+
+```bash
+codemap scan-fe --root D:/Repos/Shop.Web --out D:/CodeMapIndex/Shop
+```
+
+```bash
+codemap link --index D:/CodeMapIndex/Shop/index
+```
+
+```bash
+codemap map --index D:/CodeMapIndex/Shop/index --out D:/CodeMapIndex/Shop
+```
+
+`map` must run last: entry points in `MAP.md` only list their linked frontend screens after `link` has written `api-links.jsonl`.
 
 > Your handwritten notes in `MAP.md` (between `<!-- human:start -->` and `<!-- human:end -->`) are **always preserved** on re-scan. Add notes there freely.
 

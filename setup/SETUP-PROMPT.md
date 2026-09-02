@@ -75,11 +75,14 @@ Hỏi tôi (đừng đoán), cho TỪNG codebase tôi muốn index:
   1. Đường dẫn repo, và file solution nào (.sln hoặc .slnx — CodeMap đọc được cả hai)
   2. Muốn để index ở đâu. Gợi ý: một thư mục chung ngoài repo, ví dụ `D:/CodeMapIndex/<tên>`.
      Nếu tôi chọn để trong repo, nhớ thêm thư mục đó vào .gitignore của repo đó.
-  3. Có frontend Angular/TypeScript riêng không (đường dẫn), nếu có
+  3. Có frontend Angular/TypeScript riêng không (đường dẫn), nếu có. Hỏi thêm 1 câu:
+     frontend đó có gọi sang NHIỀU backend không, và backend này có phục vụ NHIỀU frontend
+     không — xem ghi chú "một entry = một cặp" bên dưới.
   4. Team tôi viết commit/ticket bằng ngôn ngữ nào (ja / vi / en / ...)
 
-Dùng nội dung mẫu trong `setup/codemap.projects.example.json` (3 entry, có ví dụ đủ 3 tình huống:
-có FE riêng / không FE / solution nằm sâu cần chỉ rõ `repo`) làm tham khảo cấu trúc, nhưng **ghi
+Dùng nội dung mẫu trong `setup/codemap.projects.example.json` (có ví dụ đủ 4 tình huống: có FE
+riêng / không FE / solution nằm sâu cần chỉ rõ `repo` / 1 FE gọi 2 BE tách thành 2 entry) làm
+tham khảo cấu trúc, nhưng **ghi
 thẳng vào vị trí đã chọn ở trên** — đừng copy ra `setup/` trước rồi tính di chuyển sau, dễ quên.
 Định dạng:
 
@@ -95,6 +98,15 @@ thẳng vào vị trí đã chọn ở trên** — đừng copy ra `setup/` trư
     }
   ]
 }
+
+**Một entry = một cặp (backend, frontend).** `link` chỉ khớp lời gọi FE với endpoint BE
+*trong cùng một index*, nên mỗi entry chỉ nhận đúng 1 `solution` và 1 `frontend`. Nếu tôi trả
+lời là FE gọi nhiều BE (hoặc BE phục vụ nhiều FE), **đừng nhét nhiều đường dẫn vào một entry và
+đừng bịa ra khoá mới** — tạo mỗi cặp một entry, cùng một đường dẫn FE được phép lặp lại ở nhiều
+entry, đặt `name` cho thấy rõ cặp nào (`shop-orders`, `shop-billing`). Nói trước cho tôi 2 hệ quả:
+mỗi entry quét độc lập nên BE dùng chung bị quét lại nhiều lần; và trong `diagnostics.json` của
+từng cặp, lời gọi FE nhắm sang BE khác sẽ nằm ở mục "unmatched frontend calls" — đó là ngoài
+phạm vi cặp đó, không phải link hỏng, đừng báo cho tôi như thể là lỗi.
 
 Xong thì chạy `codemap projects` để tôi xem lại đường dẫn đã resolve đúng chưa, và dòng đầu tiên
 của output ("Registry: ...") có trỏ đúng vào file bạn vừa tạo không — nếu trỏ vào chỗ khác thì có

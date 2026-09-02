@@ -18,6 +18,22 @@
       "commitLanguage": "vi"
     },
     {
+      "name": "shop-orders",
+      "description": "MẪU 4a — cùng 1 frontend gọi 2 backend: mỗi cặp (BE, FE) là MỘT entry riêng, đường dẫn FE lặp lại ở cả hai. Không gộp 2 backend vào 1 entry.",
+      "solution": "D:/Repos/OrdersService/Orders.sln",
+      "output": "D:/CodeMapIndex/Orders",
+      "frontend": "D:/Repos/Shop.Web",
+      "commitLanguage": "ja"
+    },
+    {
+      "name": "shop-billing",
+      "description": "MẪU 4b — cặp còn lại. Trong entry này, lời gọi FE nhắm sang Orders sẽ nằm ở mục \"unmatched frontend calls\" của diagnostics.json — đúng như thiết kế, không phải link hỏng.",
+      "solution": "D:/Repos/BillingService/Billing.sln",
+      "output": "D:/CodeMapIndex/Billing",
+      "frontend": "D:/Repos/Shop.Web",
+      "commitLanguage": "ja"
+    },
+    {
       "name": "legacy",
       "description": "MẪU 3 — solution nằm sâu trong repo, nên phải chỉ rõ \"repo\" để scan-git lấy đúng gốc git",
       "solution": "D:/Repos/Legacy/src/Legacy.sln",

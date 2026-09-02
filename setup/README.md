@@ -48,6 +48,8 @@ Open the file you just created, **delete all three example entries**, and add yo
 | `frontend` | — | Angular/TypeScript directory. **Omit this key entirely** if there is no separate frontend |
 | `commitLanguage` | — | Language the team writes commits in (`ja`/`vi`/`en`/...) — an AI agent reads this to decide which language to use for `where` |
 
+**One entry describes one (backend, frontend) pair.** `link` matches frontend calls to backend endpoints inside a single index, so an entry takes exactly one `solution` and one `frontend`. If a frontend calls several backends, or a backend serves several frontends, add one entry per pair — the same path may appear in more than one entry. See ["One entry describes one (backend, frontend) pair"](../README.md#one-entry-describes-one-backend-frontend-pair) for the two trade-offs that come with it (repeated scans, and per-pair "unmatched frontend calls" in `diagnostics.json`).
+
 > The `codemap.projects.json` you fill in **is gitignored** (whether it lives in `setup/` or at `~/.codemap/`, it is not part of the Git repo to commit), so internal company paths never leak into it accidentally. To share a configuration with a colleague, edit the `.example.json` file instead of the real one.
 
 The tool searches in this order: `--config <path>` → `codemap.projects.json` in the current directory, then its parent directories → `~/.codemap/codemap.projects.json`.
