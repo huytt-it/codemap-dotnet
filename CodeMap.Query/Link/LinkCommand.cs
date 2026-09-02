@@ -1,4 +1,5 @@
 using CodeMap.Query.ArgParsing;
+using CodeMap.Query.Config;
 using CodeMap.Query.FrontendScan;
 using CodeMap.Query.Json;
 using CodeMap.Query.Models;
@@ -11,7 +12,7 @@ internal static class LinkCommand
     public static int Run(string[] rawArgs)
     {
         var args = Args.Parse(rawArgs);
-        var indexDir = Path.GetFullPath(args.Require("index"));
+        var indexDir = IndexPathResolver.Resolve(args);
 
         var entryPointsPath = Path.Combine(indexDir, "entrypoints.json");
         var frontendCallsPath = Path.Combine(indexDir, "frontend-calls.jsonl");

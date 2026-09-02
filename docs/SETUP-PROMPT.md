@@ -38,54 +38,68 @@ Nếu Cách A bị chính sách máy chặn: ĐỪNG cố sửa PowerShell profi
 `CodeMap.Cli/bin/Release/net8.0/CodeMap.Cli.dll` và từ đây về sau gọi qua `dotnet <đường-dẫn-dll>`.
 Nói rõ cho tôi biết bạn đang dùng cách nào.
 
-## Bước 4 — Quét codebase của tôi
-Hỏi tôi 3 thứ, đừng đoán:
-  1. Đường dẫn repo cần quét
-  2. File solution nào (.sln hoặc .slnx — CodeMap đọc được cả hai)
-  3. Muốn để index ở đâu. Gợi ý mặc định: thư mục `.codemap/` ngay trong repo đó.
-     Nếu chọn trong repo, nhớ thêm `.codemap/` vào .gitignore của repo đó.
+## Bước 4 — Khai báo project vào codemap.projects.json
+Hỏi tôi (đừng đoán), cho TỪNG codebase tôi muốn index — tôi có thể có nhiều:
+  1. Đường dẫn repo, và file solution nào (.sln hoặc .slnx — CodeMap đọc được cả hai)
+  2. Muốn để index ở đâu. Gợi ý: một thư mục chung ngoài repo, ví dụ `D:/CodeMapIndex/<tên>`.
+     Nếu tôi chọn để trong repo, nhớ thêm thư mục đó vào .gitignore của repo đó.
+  3. Có frontend Angular/TypeScript riêng không (đường dẫn), nếu có
+  4. Team tôi viết commit/ticket bằng ngôn ngữ nào (ja / vi / en / ...)
 
-Rồi `cd` vào thư mục repo và chạy lần lượt (dừng lại báo tôi nếu bước nào lỗi):
-  codemap scan     --solution <file solution> --out <thư mục index>
-  codemap scan-git --repo .                   --out <thư mục index>
-  codemap map      --index <thư mục index>/index --out <thư mục index>
+Rồi tạo file `codemap.projects.json`. Hỏi tôi muốn đặt ở đâu — gốc repo, một thư mục workspace
+chung, hay `~/.codemap/`. Định dạng:
+
+{
+  "projects": [
+    {
+      "name": "<tên ngắn, không dấu>",
+      "description": "<mô tả codebase này là gì>",
+      "solution": "<đường dẫn .sln hoặc .slnx>",
+      "output": "<thư mục output>",
+      "frontend": "<thư mục FE, BỎ HẲN khoá này nếu không có>",
+      "commitLanguage": "<ja|vi|en|...>"
+    }
+  ]
+}
+
+Xong thì chạy `codemap projects` để tôi xem lại đường dẫn đã resolve đúng chưa.
+
+## Bước 5 — Quét
+  codemap sync --project <tên>      (hoặc `codemap sync --all` nếu khai báo nhiều project)
 
 Lưu ý khi chạy:
-- `scan` lỗi → thử `dotnet restore` trong repo trước, rồi chạy lại. Vẫn lỗi thì thêm `--syntax-only`.
+- `scan` lỗi → thử `dotnet restore` trong repo trước, rồi chạy lại. Vẫn lỗi thì báo tôi;
+  còn cách `codemap scan --solution ... --out ... --syntax-only` quét nông hơn.
 - `scan-git` báo "No ticket ID matched" → quy ước commit của team tôi khác mặc định
-  (`#123`, `TICKET-123`, `BUG-123`, `JIRA-123`). Hỏi tôi quy ước thật, rồi tạo `codemap.config.json`
-  ở gốc repo với khóa `ticketPattern`.
-- Có frontend Angular/TypeScript riêng thì hỏi tôi đường dẫn và chạy thêm:
-    codemap scan-fe --root <thư mục FE> --out <thư mục index>
-    codemap link    --index <thư mục index>/index
-  (thư mục FE phải đã `npm install`). Không có FE riêng thì bỏ qua, đừng bịa.
+  (`#123`, `TICKET-123`, `BUG-123`, `JIRA-123`). Hỏi tôi quy ước thật, rồi tạo
+  `codemap.config.json` ở GỐC REPO BỊ QUÉT với khoá `ticketPattern`. Lưu ý đây là file khác
+  với `codemap.projects.json` ở Bước 4 — đừng gộp làm một.
+- `scan-fe` bị bỏ qua → thư mục FE phải đã chạy `npm install`. Không có FE riêng thì đúng là
+  phải bỏ qua, đừng bịa ra.
 
-Sau khi xong, mở `<thư mục index>/MAP.md` và tóm tắt cho tôi: bao nhiêu project, bao nhiêu entry point,
-mục Blind Spots nói gì.
+Sau khi xong, chạy `codemap projects` để xác nhận trạng thái index, rồi mở `<output>/MAP.md`
+và tóm tắt cho tôi: bao nhiêu project, bao nhiêu entry point, mục Blind Spots nói gì.
 
-## Bước 5 — Cấu hình cho AI agent
+## Bước 6 — Cấu hình cho AI agent
 Copy `docs/copilot-instructions.md` từ repo CodeMap sang repo TÔI ĐANG QUÉT, đặt tại
 `.github/copilot-instructions.md` (tạo thư mục `.github` nếu chưa có).
 
-QUAN TRỌNG — file đó có khối cấu hình đường dẫn ở ngay đầu:
-    INDEX_DIR  = ...
-    MAP_FILE   = ...
-    REPORT_DIR = ...
-Sửa 3 dòng đó thành đường dẫn THẬT vừa dùng ở Bước 4. Đây là chỗ duy nhất trong file có đường dẫn.
+File đó đã tự đọc `codemap.projects.json` nên KHÔNG cần điền đường dẫn tay. Nhưng phải kiểm 2 điều:
+- Agent có tìm thấy `codemap.projects.json` từ trong repo đó không (tool tìm ngược lên thư mục
+  cha, và cả `~/.codemap/`). Nếu không, bảo tôi chuyển file config tới chỗ tìm được.
+- Phần "Ngôn ngữ" trong file đang viết sẵn cho codebase commit tiếng Nhật. Nếu `commitLanguage`
+  của tôi khác, sửa lại cho khớp — đừng để nguyên nếu không đúng.
 
-Đọc lướt phần "Ngôn ngữ" trong file đó và sửa cho khớp thực tế repo của tôi: nó đang viết sẵn cho
-codebase có commit/ticket tiếng Nhật. Hỏi tôi team viết commit bằng ngôn ngữ nào rồi chỉnh lại,
-đừng để nguyên nếu không đúng.
-
-## Bước 6 — Kiểm chứng end-to-end
+## Bước 7 — Kiểm chứng end-to-end
 Chạy thử một truy vấn thật rồi cho tôi xem output:
-  codemap where --index <thư mục index>/index --query "<một mô tả nghiệp vụ, bằng ngôn ngữ team tôi viết commit>"
+  codemap where --project <tên> --query "<mô tả nghiệp vụ, bằng đúng ngôn ngữ team tôi viết commit>"
 Lấy một docId `M:...` từ kết quả rồi chạy:
-  codemap impact --index <thư mục index>/index --symbol "<docId>"
+  codemap impact --project <tên> --symbol "<docId>"
 
 Cuối cùng tổng kết ngắn gọn cho tôi:
 - Đang dùng cách cài nào (A hay B), gõ lệnh gì để dùng hằng ngày
-- Index nằm ở đâu, cần chạy lại lệnh nào khi code đổi nhiều
+- File codemap.projects.json nằm ở đâu, khai báo mấy project
+- Cần chạy lại lệnh nào khi code đổi nhiều (`codemap sync --project ...`)
 - Bước nào đã bỏ qua và vì sao (không có FE, không có ticket...)
 ```
 
@@ -95,5 +109,5 @@ Cuối cùng tổng kết ngắn gọn cho tôi:
 
 - Prompt này **không** bảo AI sửa PowerShell profile hay PATH hệ thống — đó là chủ ý, vì nhiều máy công ty
   chặn. Nếu `dotnet tool install` cũng bị chặn thì Cách B (gọi thẳng dll) luôn chạy được.
-- Nếu bạn quét **nhiều repo**, chạy lại từ Bước 4 cho từng repo. CodeMap chỉ cài một lần.
+- Quét **nhiều repo**: thêm nhiều entry vào mảng `projects` của cùng một `codemap.projects.json`, rồi `codemap sync --all`. CodeMap chỉ cài một lần.
 - Index không tự cập nhật. Xem [README, Phần 4](../README.md) để biết khi nào cần quét lại.

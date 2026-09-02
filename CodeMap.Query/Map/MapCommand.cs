@@ -1,4 +1,5 @@
 using CodeMap.Query.ArgParsing;
+using CodeMap.Query.Config;
 using CodeMap.Query.Json;
 using CodeMap.Query.Models;
 
@@ -9,7 +10,7 @@ internal static class MapCommand
     public static int Run(string[] rawArgs)
     {
         var args = Args.Parse(rawArgs);
-        var indexDir = Path.GetFullPath(args.Require("index"));
+        var indexDir = IndexPathResolver.Resolve(args);
         var outDir = Path.GetFullPath(args.Require("out"));
 
         var symbolsPath = Path.Combine(indexDir, "symbols.jsonl");

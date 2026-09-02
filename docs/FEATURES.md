@@ -177,7 +177,7 @@ Hai việc bù lại (spec mục 9 yêu cầu, chưa làm — cần dữ liệu 
 
 | Hạng mục | Kết quả |
 |---|---|
-| Test tự động | **184/184 pass**, build 0 lỗi 0 warning |
+| Test tự động | **194/194 pass**, build 0 lỗi 0 warning |
 | Khung .NET hỗ trợ | Chạy trên runtime **8 / 9 / 10** (`RollForward=Major`); quét được codebase đích `net8.0`, `net9.0`, `net10.0`; đọc được solution cả `.sln` lẫn `.slnx` |
 | Repo thật (eShopOnWeb) | Phát hiện 28 entry point thật, 2 cạnh MediatR thật được nối đúng |
 | Benchmark `where` — tiếng Việt | 8/10 top-1 đúng, nhưng chỉ 6/10 đủ tin cậy (`docs/BENCHMARK-WHERE.md`) |

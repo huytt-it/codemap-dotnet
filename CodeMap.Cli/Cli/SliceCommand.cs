@@ -1,4 +1,5 @@
 using CodeMap.Query.ArgParsing;
+using CodeMap.Query.Config;
 using CodeMap.Query.Impact;
 using CodeMap.Roslyn.Slice;
 
@@ -15,7 +16,7 @@ internal static class SliceCommand
     public static int Run(string[] rawArgs)
     {
         var args = Args.Parse(rawArgs);
-        var indexDir = Path.GetFullPath(args.Require("index"));
+        var indexDir = IndexPathResolver.Resolve(args);
         var symbolId = args.Require("symbol");
         var depth = args.GetIntOrDefault("depth", 3);
         var outFile = args.GetOrDefault("out");

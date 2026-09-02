@@ -1,4 +1,5 @@
 using CodeMap.Query.ArgParsing;
+using CodeMap.Query.Config;
 using CodeMap.Query.Impact;
 
 namespace CodeMap.Query.Where;
@@ -9,7 +10,7 @@ internal static class WhereCommand
     public static int Run(string[] rawArgs)
     {
         var args = Args.Parse(rawArgs);
-        var indexDir = Path.GetFullPath(args.Require("index"));
+        var indexDir = IndexPathResolver.Resolve(args);
         var query = args.Require("query");
 
         var symbolsPath = Path.Combine(indexDir, "symbols.jsonl");

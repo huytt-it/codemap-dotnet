@@ -1,4 +1,5 @@
 using CodeMap.Query.ArgParsing;
+using CodeMap.Query.Config;
 using CodeMap.Query.Find;
 using CodeMap.Query.FrontendScan;
 using CodeMap.Query.Git;
@@ -30,6 +31,8 @@ internal static class CliApp
                 "scan" => ScanCommand.Run(rest),
                 "scan-fe" => ScanFeCommand.Run(rest),
                 "scan-git" => ScanGitCommand.Run(rest),
+                "sync" => SyncCommand.Run(rest),
+                "projects" => ProjectsCommand.Run(rest),
                 "link" => LinkCommand.Run(rest),
                 "map" => MapCommand.Run(rest),
                 "find" => FindCommand.Run(rest),
@@ -71,18 +74,26 @@ internal static class CliApp
         Console.Error.WriteLine("""
             codemap — .NET codebase index tool for AI (offline, CLI, static output)
 
-            Usage:
-              codemap scan     --solution <path.sln> --out <dir> [--syntax-only] [--include-external]
+            Registered projects (needs a codemap.projects.json — see README):
+              codemap projects [--config <file>]
+              codemap sync     (--project <name> | --all) [--config <file>]
+
+            Build an index by hand:
+              codemap scan     --solution <path.sln|path.slnx> --out <dir> [--syntax-only] [--include-external]
               codemap scan-fe  --root <frontend dir> --out <dir>
               codemap scan-git --repo <path> --out <dir> [--since 2024-01-01]
-              codemap link     --index <dir>
-              codemap find     --index <dir> --query <text>
-              codemap where    --index <dir> --query "<business description>"
-              codemap impact   --index <dir> --symbol <docId> [--depth 5] [--full] [--out <file.md>]
-              codemap slice    --index <dir> --symbol <docId> [--depth 3] [--out <file.md>]
-              codemap map      --index <dir> --out <dir>
+              codemap link     <index>
+              codemap map      <index> --out <dir>
 
-            All commands above are implemented. See README.md to get started, or docs/CODEMAP-SPEC.md for the design.
+            Query an index:
+              codemap find     <index> --query <text>
+              codemap where    <index> --query "<business description>"
+              codemap impact   <index> --symbol <docId> [--depth 5] [--full] [--out <file.md>]
+              codemap slice    <index> --symbol <docId> [--depth 3] [--out <file.md>]
+
+            <index> above means either --index <dir> or --project <name> (resolved via codemap.projects.json).
+
+            See README.md to get started, or docs/CODEMAP-SPEC.md for the design.
             """);
     }
 }

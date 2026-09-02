@@ -83,7 +83,84 @@ Nếu bạn dùng Copilot / Claude Code / Cursor, mở [docs/SETUP-PROMPT.md](do
 
 ---
 
-## Phần 2 — Quét lần đầu cho 1 repo
+## Phần 2 — Khai báo project rồi quét (cách khuyến nghị)
+
+Thay vì nhớ 4 đường dẫn tuyệt đối cho mỗi repo, khai báo **một lần** vào file `codemap.projects.json`, rồi mọi lệnh về sau chỉ cần `--project <tên>`.
+
+### Bước 1 — Tạo `codemap.projects.json`
+
+Đặt ở đâu cũng được: gốc repo, một thư mục "workspace" chung, hoặc `~/.codemap/`. Tool tự tìm ngược lên thư mục cha, nên bạn chạy lệnh từ thư mục con nào cũng thấy.
+
+```json
+{
+  "description": "Các codebase tôi đang index",
+  "projects": [
+    {
+      "name": "shop",
+      "description": "Backend đơn hàng — Razor Pages + PublicApi",
+      "solution": "D:/Repos/Shop/Shop.sln",
+      "output": "D:/CodeMapIndex/Shop",
+      "frontend": "D:/Repos/Shop.Web",
+      "commitLanguage": "ja"
+    },
+    {
+      "name": "billing",
+      "description": "Dịch vụ hoá đơn, tách riêng",
+      "solution": "D:/Repos/Billing/Billing.slnx",
+      "output": "D:/CodeMapIndex/Billing",
+      "commitLanguage": "en"
+    }
+  ]
+}
+```
+
+| Khoá | Bắt buộc? | Ý nghĩa |
+|---|---|---|
+| `name` | ✅ | Tên ngắn dùng cho `--project`. Không phân biệt hoa thường, không được trùng nhau. |
+| `solution` | ✅ | File `.sln` hoặc `.slnx` cần quét. |
+| `output` | ✅ | Thư mục output. **Index nằm ở `<output>/index`**, `MAP.md` ở `<output>/MAP.md`. |
+| `description` | — | Mô tả cho người (và AI) đọc hiểu codebase này là gì. |
+| `repo` | — | Gốc git. Bỏ trống thì lấy thư mục chứa solution. |
+| `frontend` | — | Thư mục Angular/TypeScript. Bỏ trống thì bỏ qua hẳn bước quét FE. |
+| `commitLanguage` | — | Ngôn ngữ team viết commit (`ja`/`vi`/`en`...). AI đọc để biết nên hỏi `where` bằng ngôn ngữ nào. |
+
+> Đường dẫn có thể là **tương đối** — tính từ vị trí chính file `codemap.projects.json`, không phải từ thư mục bạn đang đứng. Nhờ vậy cả cây thư mục copy sang máy khác vẫn chạy.
+
+### Bước 2 — Quét
+
+```bash
+codemap sync --project shop
+```
+
+Một lệnh chạy trọn `scan` → `scan-git` → `scan-fe` → `link` → `map`, đúng thứ tự phụ thuộc dữ liệu. Quét tất cả project cùng lúc:
+
+```bash
+codemap sync --all
+```
+
+`scan` lỗi thì dừng project đó lại (index dở còn tệ hơn không có). `scan-git` và `scan-fe` chỉ là bổ sung — repo chưa có git hay không có FE riêng thì bỏ qua và vẫn ra `MAP.md` dùng được.
+
+### Bước 3 — Kiểm tra
+
+```bash
+codemap projects
+```
+
+Liệt kê mọi project, đường dẫn thật sau khi resolve, và **trạng thái index**: đã build chưa, bao nhiêu symbol, quét lúc nào, cách đây mấy ngày.
+
+### Dùng hằng ngày
+
+```bash
+codemap where --project shop --query "注文のキャンセル"
+```
+
+Mọi lệnh query (`find`, `where`, `impact`, `slice`, `map`, `link`) đều nhận `--project <tên>` thay cho `--index <đường dẫn dài>`.
+
+---
+
+## Phần 2b — Quét thủ công, không dùng file config
+
+Vẫn chạy được bình thường nếu bạn không muốn tạo `codemap.projects.json`.
 
 Giả sử repo của bạn ở `D:\Repos\MyApp`, solution là `D:\Repos\MyApp\MyApp.sln`.
 
@@ -191,7 +268,7 @@ Không sao cả — mọi file `.md` sinh ra đều có dòng cảnh báo ở đ
 current HEAD b7e1d04 · 11 commit(s) behind, 6 relevant file(s) changed since the scan
 ```
 
-Thấy con số lớn thì quét lại. Chạy lại đúng các lệnh ở [Phần 2](#phần-2--quét-lần-đầu-cho-1-repo) (ghi đè lên thư mục cũ, an toàn).
+Thấy con số lớn thì quét lại: `codemap sync --project <tên>` (hoặc `--all`). Ghi đè lên thư mục cũ, an toàn. Không dùng file config thì chạy lại các lệnh ở [Phần 2b](#phần-2b--quét-thủ-công-không-dùng-file-config).
 
 > Ghi chú tay của bạn trong `MAP.md` (phần giữa `<!-- human:start -->` và `<!-- human:end -->`) **luôn được giữ lại** khi quét lại. Cứ ghi chú thoải mái vào đó.
 
@@ -201,7 +278,18 @@ Muốn tự động quét mỗi đêm (hiện **đang tắt**, đang chạy tay)
 
 ## Phần 5 — Cấu hình (tùy chọn)
 
-Tạo file `codemap.config.json` ở **gốc repo** nếu cần. Không có file này thì tool dùng mặc định, vẫn chạy bình thường.
+Có **hai** file config, khác nhau hoàn toàn, đừng nhầm:
+
+| File | Đặt ở đâu | Trả lời câu hỏi |
+|---|---|---|
+| `codemap.projects.json` | Nơi bạn chọn (workspace, hoặc `~/.codemap/`) | **Quét cái gì, kết quả để đâu** — xem [Phần 2](#phần-2--khai-báo-project-rồi-quét-cách-khuyến-nghị) |
+| `codemap.config.json` | **Gốc của repo bị quét** | **Quét như thế nào** — quy ước riêng của repo đó (dưới đây) |
+
+Một repo có quy ước lạ thì cần file thứ hai; nhiều repo cùng lúc thì cần file thứ nhất. Không liên quan gì nhau, có thể dùng một hoặc cả hai.
+
+### `codemap.config.json` — quy ước riêng của repo
+
+Tạo ở **gốc repo bị quét** nếu cần. Không có file này thì tool dùng mặc định, vẫn chạy bình thường.
 
 ```json
 {

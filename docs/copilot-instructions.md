@@ -2,32 +2,52 @@
 
 <!-- Đặt file này tại .github/copilot-instructions.md để agent tự đọc mỗi session -->
 
-## ⚙️ Cấu hình — sửa 3 dòng này trước khi dùng
+## ⚙️ Đường dẫn index — đọc từ `codemap.projects.json`, đừng đoán
 
-Đây là chỗ **duy nhất** trong file khai báo đường dẫn. Người cài file này điền một lần cho
-đúng máy/repo của mình, phần còn lại của tài liệu chỉ tham chiếu lại tên biến.
+**Việc đầu tiên mỗi session, trước khi in bất kỳ lệnh nào:** mở file `codemap.projects.json`
+(tìm ở gốc repo, các thư mục cha, hoặc `~/.codemap/`). File đó khai báo mọi codebase đã index:
 
+```json
+{
+  "projects": [
+    {
+      "name": "shop",
+      "description": "Backend đơn hàng — Razor Pages + PublicApi",
+      "solution": "D:/Repos/Shop/Shop.sln",
+      "output": "D:/CodeMapIndex/Shop",
+      "commitLanguage": "ja"
+    }
+  ]
+}
 ```
-INDEX_DIR  = .codemap/index          # thư mục chứa symbols.jsonl (tham số --index)
-MAP_FILE   = .codemap/MAP.md         # bản đồ tổng quan
-REPORT_DIR = .codemap/reports        # nơi ghi output dài của slice / impact --full
-```
 
-> **Với AI:** trước khi in lệnh đầu tiên, hãy **kiểm tra `INDEX_DIR` có tồn tại thật không**
-> (liệt kê thư mục, tìm `symbols.jsonl`). Nếu không thấy, **đừng đoán đường dẫn khác và đừng
-> tự bịa** — hỏi thẳng tôi index nằm đâu, hoặc nói tôi chưa chạy `codemap scan`. Đường dẫn ở
-> trên là mặc định gợi ý, không phải sự thật hiển nhiên: mỗi máy đặt một kiểu (có nơi để
-> ngoài repo hẳn, ví dụ `D:\CodeMapIndex\<tên-repo>\index`).
+Cách dùng những gì đọc được:
+
+- **`output`** là thư mục output. Index thật nằm ở **`<output>/index`** (đây mới là giá trị
+  cho `--index`), bản đồ tổng quan ở **`<output>/MAP.md`**.
+- **`name`** dùng để rút gọn lệnh: `--project shop` thay cho `--index <đường dẫn dài>`. Ưu
+  tiên cách này khi in lệnh cho tôi — ngắn hơn và không sợ gõ sai đường dẫn.
+- **`description`** cho bạn biết codebase đó là gì. Repo nào cũng có thể có nhiều entry.
+- **`commitLanguage`** là ngôn ngữ team viết commit/ticket. **Quyết định trực tiếp** ngôn ngữ
+  bạn nên dùng cho `where` — xem mục "Ngôn ngữ" bên dưới.
+
+> **Nếu không tìm thấy `codemap.projects.json`:** hỏi tôi index nằm đâu, rồi dùng
+> `--index <đường dẫn>`. **Không tự bịa đường dẫn, không giả định `.ai/` hay `.codemap/`** —
+> mỗi máy đặt một kiểu, có nơi để index ngoài repo hẳn.
+>
+> **Nếu file có nhưng project tôi hỏi chưa được index** (`status: NOT BUILT` khi tôi chạy
+> `codemap projects`): nói tôi chạy `codemap sync --project <tên>` trước, đừng cố truy vấn.
 
 ## Bối cảnh
 
-Repo này có một index tĩnh do tool `codemap` sinh ra, nằm ở `INDEX_DIR`. Index được quét lại
+Repo này có một index tĩnh do tool `codemap` sinh ra, nằm ở `<output>/index`. Index được quét lại
 một lần mỗi ngày. Nó trả lời câu hỏi "code nằm đâu và nối với cái gì" nhanh và đầy đủ hơn
 grep rất nhiều.
 
-Codebase là .NET Core 8. **Comment trong code và message commit/ticket viết bằng tiếng Nhật;
-tên class, method, route viết bằng tiếng Anh.** Sự lệch ngôn ngữ này quyết định lệnh nào
-dùng được cho câu hỏi nào — xem mục "Ngôn ngữ" bên dưới, đọc trước khi gõ lệnh đầu tiên.
+Codebase là .NET (8/9/10 đều được). **Tên class, method, route luôn là tiếng Anh; còn comment
+và message commit/ticket thì theo `commitLanguage` của project trong `codemap.projects.json`
+(ví dụ dưới đây viết cho `"ja"` — tiếng Nhật).** Sự lệch ngôn ngữ này quyết định lệnh nào dùng
+được cho câu hỏi nào — xem mục "Ngôn ngữ" bên dưới, đọc trước khi gõ lệnh đầu tiên.
 
 **Bạn không chạy được `codemap`.** Tôi chạy lệnh trong terminal, bạn đọc kết quả. Xem mục
 "Khi bạn cần thêm dữ liệu" bên dưới.
@@ -50,7 +70,7 @@ In đúng một lệnh trong code block, kèm một dòng nói lệnh đó trả
 
 > Tôi cần biết `OrderService.Cancel` được gọi từ đâu. Chạy giúp:
 > ```
-> codemap impact --index <INDEX_DIR> --symbol "M:Orders.OrderService.Cancel(System.Int32)"
+> codemap impact --project <tên> --symbol "M:Orders.OrderService.Cancel(System.Int32)"
 > ```
 
 Không in nhiều lệnh cùng lúc. Không viết "sau đó chạy tiếp...". Mỗi lượt một lệnh.
@@ -59,12 +79,12 @@ Không in nhiều lệnh cùng lúc. Không viết "sau đó chạy tiếp...". 
 
 | Cần gì | Lệnh |
 |---|---|
-| Tìm symbol theo tên (đã biết tên tiếng Anh) | `codemap find --index <INDEX_DIR> --query "OrderService.Cancel"` |
-| Tìm symbol theo mô tả nghiệp vụ tiếng Nhật | `codemap where --index <INDEX_DIR> --query "注文のキャンセル"` |
-| Ảnh hưởng, bản gọn | `codemap impact --index <INDEX_DIR> --symbol "<docId>"` |
-| Ảnh hưởng, đủ caller trung gian | `codemap impact --index <INDEX_DIR> --symbol "<docId>" --full` |
-| Ảnh hưởng + code thật + lịch sử ticket | `codemap slice --index <INDEX_DIR> --symbol "<docId>" --out <REPORT_DIR>/current.md` |
-| Bản đồ tổng quan | đọc `<MAP_FILE>` (đã có sẵn, không cần chạy lệnh) |
+| Tìm symbol theo tên (đã biết tên tiếng Anh) | `codemap find --project <tên> --query "OrderService.Cancel"` |
+| Tìm symbol theo mô tả nghiệp vụ tiếng Nhật | `codemap where --project <tên> --query "注文のキャンセル"` |
+| Ảnh hưởng, bản gọn | `codemap impact --project <tên> --symbol "<docId>"` |
+| Ảnh hưởng, đủ caller trung gian | `codemap impact --project <tên> --symbol "<docId>" --full` |
+| Ảnh hưởng + code thật + lịch sử ticket | `codemap slice --project <tên> --symbol "<docId>" --out <thư mục report>/current.md` |
+| Bản đồ tổng quan | đọc `<output>/MAP.md` (đã có sẵn, không cần chạy lệnh) |
 
 Output dài (`slice`, `impact --full` trên symbol lớn) thì luôn dùng `--out` rồi tôi sẽ
 `#file` cho bạn, vì terminal bị cắt bớt.

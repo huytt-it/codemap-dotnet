@@ -1,4 +1,5 @@
 using CodeMap.Query.ArgParsing;
+using CodeMap.Query.Config;
 
 namespace CodeMap.Query.Impact;
 
@@ -8,7 +9,7 @@ internal static class ImpactCommand
     public static int Run(string[] rawArgs)
     {
         var args = Args.Parse(rawArgs);
-        var indexDir = Path.GetFullPath(args.Require("index"));
+        var indexDir = IndexPathResolver.Resolve(args);
         var symbolId = args.Require("symbol");
         var depth = args.GetIntOrDefault("depth", 5);
         var full = args.HasFlag("full");
