@@ -1,94 +1,94 @@
-# setup/ — mọi thứ cần điền, gom một chỗ
+# setup/ — everything you need to fill in, in one place
 
-Các file trong thư mục này là toàn bộ phần "cấu hình" của CodeMap. Clone repo về, làm đúng 4 việc dưới đây là dùng được.
+The files in this directory are the entire "configuration" surface of CodeMap. Clone the repo, complete the four tasks below, and it is ready to use.
 
-| File | Làm gì với nó |
+| File | What to do with it |
 |---|---|
-| `codemap.projects.example.json` | **Copy thành `codemap.projects.json` rồi điền** — khai báo repo nào cần quét, index để đâu |
-| `codemap.permissions.json` | Sửa trực tiếp — lệnh `codemap` nào AI được **tự chạy**, lệnh nào phải hỏi bạn trước |
-| `SETUP-PROMPT.md` | Copy khối prompt dán vào AI để nó cài đặt thay bạn (tuỳ chọn) |
-| `codemap.instructions.md` | Copy vào 1 trong 2 chỗ — xem "Việc 4" bên dưới |
+| `codemap.projects.example.json` | **Copy it to `codemap.projects.json` and fill it in** — declares which repos to scan and where the index goes |
+| `codemap.permissions.json` | Edit directly — which `codemap` subcommands an AI agent may **run on its own**, and which require your confirmation |
+| `SETUP-PROMPT.md` | Copy the prompt block and paste it into an AI to have it run the setup for you (optional) |
+| `codemap.instructions.md` | Copy to one of two locations — see "Task 4" below |
 
 ---
 
-## Việc 1 — Khai báo project
+## Task 1 — Declare your projects
 
-**Quyết định trước: 1 project hay nhiều project?** Việc này quyết định nên đặt file ở đâu, và ảnh hưởng luôn tới Việc 4 (chọn cùng 1 phạm vi cho cả registry lẫn instructions) — chọn 1 lần, đừng đổi qua lại.
+**Decide first: one project, or many?** This decision determines where the file goes, and carries through to Task 4 (the registry and the instructions file must use the same scope) — decide once, and do not switch back and forth.
 
-### Nhiều project, thêm/bớt theo thời gian (khuyến nghị nếu bạn quét nhiều repo)
+### Many projects, added or removed over time (recommended if you scan several repos)
 
-Tạo **thẳng** tại `~/.codemap/codemap.projects.json` — đừng copy ra `setup/` trước rồi tính chuyển sau, dễ quên:
+Create the file **directly** at `~/.codemap/codemap.projects.json` — do not copy it into `setup/` first and plan to move it later; that step gets forgotten:
 
 ```bash
 mkdir -p ~/.codemap
 cp setup/codemap.projects.example.json ~/.codemap/codemap.projects.json
 ```
 
-(Windows: đường dẫn thật là `C:\Users\<tên bạn>\.codemap\codemap.projects.json`.) Đây là nơi tool luôn tìm tới cuối cùng nếu không thấy bản nào gần hơn — để sót 1 bản khác ở `setup/` trong chính repo CodeMap, hay ở gốc từng repo đích, thì bản gần thư mục đang đứng hơn **luôn được ưu tiên và che khuất bản ở `~/.codemap/`**, 2 bản dễ lệch dần mà không ai để ý. Vì nằm ngoài mọi repo, **mọi đường dẫn trong file phải là tuyệt đối**, không dùng đường dẫn tương đối.
+(On Windows, the real path is `C:\Users\<your-name>\.codemap\codemap.projects.json`.) This is the last place the tool checks if no closer copy exists. If a stray copy is left behind — in `setup/` inside the CodeMap clone itself, or at the root of a target repo — the copy nearest the current directory **always takes priority and hides the one at `~/.codemap/`**, and the two can quietly drift apart over time. Because this file now lives outside every repo, **every path inside it must be absolute** — relative paths will not resolve correctly.
 
-### Chỉ 1 project
+### Just one project
 
 ```bash
 cp setup/codemap.projects.example.json setup/codemap.projects.json
 ```
 
-Không có rủi ro shadow vì chỉ có 1 bản duy nhất — đặt trong `setup/` hoặc gốc repo đích đều được.
+No shadowing risk here, since only one copy exists — placing it in `setup/` or at the target repo's root both work.
 
-### Điền nội dung (áp dụng cho cả 2 cách)
+### Filling it in (applies to either approach)
 
-Mở file vừa tạo, **xoá hết 3 entry mẫu**, điền của bạn:
+Open the file you just created, **delete all three example entries**, and add your own:
 
-| Khoá | Bắt buộc? | Ý nghĩa |
+| Key | Required? | Meaning |
 |---|---|---|
-| `name` | ✅ | Tên ngắn để gõ `--project <tên>`. Không phân biệt hoa thường, không được trùng. |
-| `solution` | ✅ | File `.sln` hoặc `.slnx` cần quét |
-| `output` | ✅ | Thư mục output. **Index nằm ở `<output>/index`**, `MAP.md` ở `<output>/MAP.md` |
-| `description` | — | Mô tả codebase này là gì — AI đọc để hiểu ngữ cảnh |
-| `repo` | — | Gốc git. Bỏ trống thì lấy thư mục chứa solution |
-| `frontend` | — | Thư mục Angular/TypeScript. **Bỏ hẳn khoá này** nếu không có FE riêng |
-| `commitLanguage` | — | Ngôn ngữ team viết commit (`ja`/`vi`/`en`...) — AI đọc để biết nên hỏi `where` bằng tiếng gì |
+| `name` | Required | Short name used with `--project <name>`. Case-insensitive, must be unique. |
+| `solution` | Required | The `.sln` or `.slnx` file to scan |
+| `output` | Required | Output directory. **The index lives at `<output>/index`**, `MAP.md` at `<output>/MAP.md` |
+| `description` | — | What this codebase is — an AI agent reads this for context |
+| `repo` | — | Git root. Defaults to the solution's own directory if left blank |
+| `frontend` | — | Angular/TypeScript directory. **Omit this key entirely** if there is no separate frontend |
+| `commitLanguage` | — | Language the team writes commits in (`ja`/`vi`/`en`/...) — an AI agent reads this to decide which language to use for `where` |
 
-> File `codemap.projects.json` bạn điền **đã được `.gitignore`** (dù đặt ở `setup/` hay tự tạo ở `~/.codemap/` thì cũng không nằm trong repo Git để commit), nên đường dẫn nội bộ công ty không vô tình lộ ra. Muốn chia sẻ cấu hình cho đồng nghiệp thì sửa file `.example.json` thay vì file thật.
+> The `codemap.projects.json` you fill in **is gitignored** (whether it lives in `setup/` or at `~/.codemap/`, it is not part of the Git repo to commit), so internal company paths never leak into it accidentally. To share a configuration with a colleague, edit the `.example.json` file instead of the real one.
 
-Tool tìm theo thứ tự: `--config <đường dẫn>` → `codemap.projects.json` ở thư mục hiện tại rồi ngược lên các thư mục cha → `~/.codemap/codemap.projects.json`.
+The tool searches in this order: `--config <path>` → `codemap.projects.json` in the current directory, then its parent directories → `~/.codemap/codemap.projects.json`.
 
-Sau khi điền xong, chạy `codemap projects` **từ vài thư mục khác nhau** (gốc repo CodeMap, gốc 1 repo đích...) — dòng `Registry: ...` đầu output phải luôn trỏ về đúng 1 file bạn vừa tạo. Nếu có lúc trỏ vào chỗ khác, tức là còn sót bản `codemap.projects.json` cũ ở đâu đó gần cwd hơn — tìm và xoá.
+Once it's filled in, run `codemap projects` **from a few different directories** (the CodeMap repo root, a target repo's root...) — the `Registry: ...` line at the top of the output should always point to the one file you created. If it ever points somewhere else, an old `codemap.projects.json` is still sitting closer to the current directory — find and remove it.
 
-Nếu đặt ở `setup/`, kiểm tra bằng:
+If placed in `setup/`, check it with:
 
 ```bash
 codemap projects --config setup/codemap.projects.json
 ```
 
-Lệnh này in ra đường dẫn **sau khi resolve** và trạng thái index của từng project — sai đường dẫn là thấy ngay. Nếu đặt ở `~/.codemap/`, bỏ `--config` — tool tự tìm thấy.
+This prints the resolved paths and the index status for each project — a wrong path is obvious immediately. If placed at `~/.codemap/`, drop `--config` — the tool finds it on its own.
 
-## Việc 2 — Quét
+## Task 2 — Scan
 
 ```bash
 codemap sync --all
 ```
 
-(Thêm `--config setup/codemap.projects.json` nếu bạn chọn đặt trong `setup/`.) Chạy trọn `scan` → `scan-git` → `scan-fe` → `link` → `map` cho mọi project đã khai báo. Quét một project thôi thì `--project <tên>` thay cho `--all`.
+(Add `--config setup/codemap.projects.json` if you placed the file inside `setup/`.) Runs `scan` → `scan-git` → `scan-fe` → `link` → `map` for every declared project, in order. To scan a single project instead of all of them, use `--project <name>` in place of `--all`.
 
-## Việc 3 — Quyết định AI được tự chạy lệnh nào
+## Task 3 — Decide which commands an AI agent may run on its own
 
-Mặc định, AI **không tự chạy `codemap`** — nó in lệnh ra, bạn dán vào terminal, rồi dán output ngược lại cho nó đọc. An toàn nhưng chậm.
+By default, an AI agent **does not run `codemap` itself** — it prints the command, you paste it into a terminal, then paste the output back for it to read. Safe, but slow.
 
-Mở `setup/codemap.permissions.json`, đổi `"autoRun"` cho từng lệnh con:
+Open `setup/codemap.permissions.json` and change `"autoRun"` for each subcommand:
 
 ```json
-"where": { "autoRun": true, "reason": "chỉ đọc index" }
+"where": { "autoRun": true, "reason": "read-only against the index" }
 ```
 
-Mặc định sẵn: `find` / `where` / `impact` / `slice` / `projects` (chỉ đọc, không side effect ngoài ghi 1 file report nếu có `--out`) là `true`; `scan` / `scan-fe` / `scan-git` / `sync` / `map` / `link` (ghi lại index, có thể chậm) là `false`. Đổi tuỳ ý — không có gì bắt buộc phải giữ nguyên.
+Preconfigured defaults: `find` / `where` / `impact` / `slice` / `projects` (read-only, with no side effect beyond writing a single report file when `--out` is given) are set to `true`; `scan` / `scan-fe` / `scan-git` / `sync` / `map` / `link` (rewrite the index, can be slow) are set to `false`. Change these however you like — nothing here is fixed.
 
-> AI tìm file này **cùng chỗ với `codemap.projects.json`** (root repo đích / thư mục cha / `~/.codemap/`) — không phải trong `.github/`. Đặt `codemap.projects.json` ở đâu (Việc 1) thì đặt `codemap.permissions.json` ở đúng đó, đừng để 2 nơi khác nhau.
+> An agent looks for this file **in the same place as `codemap.projects.json`** (target repo root / a parent directory / `~/.codemap/`), not inside `.github/`. Wherever you placed `codemap.projects.json` in Task 1, put `codemap.permissions.json` there too — don't split them across two locations.
 
-**Đây là quy ước mềm** — AI tuân theo vì `codemap.instructions.md` bảo nó đọc và làm theo, giống mọi quy tắc khác trong file đó (cách đọc "Blind spots", cách viết symbol...). Không phải cơ chế chặn của hệ điều hành, và không phân biệt AI/công cụ nào đang đọc.
+**This is a soft convention** — an agent follows it because `codemap.instructions.md` tells it to, the same way it follows every other rule in that file (how to read "Blind spots", how to write out a symbol name, and so on). It is not an operating-system-level restriction, and it does not distinguish between different AI tools reading it.
 
-### Chặn cứng (tuỳ chọn, riêng cho Claude Code)
+### Hard enforcement (optional, Claude Code only)
 
-Muốn chặn thật — agent không thể lách kể cả khi "quên" đọc file — thêm vào `.claude/settings.json` (hoặc `.claude/settings.local.json`) của repo đích:
+To make this a real restriction — one an agent cannot bypass even if it "forgets" to read the file — add this to `.claude/settings.json` (or `.claude/settings.local.json`) in the target repo:
 
 ```json
 {
@@ -104,51 +104,51 @@ Muốn chặn thật — agent không thể lách kể cả khi "quên" đọc f
 }
 ```
 
-Đây là cơ chế permission gốc của Claude Code — chạy đúng những lệnh được liệt kê mà không hỏi lại, mọi lệnh khác vẫn phải xác nhận. Copilot Chat / Cursor có cơ chế tương tự riêng (thường gọi là "auto-approve" cho terminal), tên setting khác nhau tuỳ phiên bản — xem tài liệu của công cụ đó nếu muốn chặn cứng thay vì chỉ dựa vào `codemap.permissions.json`.
+This is Claude Code's own permission mechanism — it runs exactly the listed commands without asking again, while everything else still requires confirmation. Copilot Chat and Cursor each have their own equivalent (usually called "auto-approve" for the terminal), under a setting name that varies by version — check that tool's documentation if you want hard enforcement rather than relying on `codemap.permissions.json` alone.
 
-## Việc 4 — Cho AI đọc được
+## Task 4 — Make it readable by an AI agent
 
-`codemap.instructions.md` dùng đúng đuôi `.instructions.md` — quy ước "path-specific instructions" của VS Code (GitHub Copilot Chat, và cả Claude Code/Cursor đọc kiểu tương tự), **khác** với `copilot-instructions.md` là tên file cố định dành riêng cho 1 file duy nhất ở gốc mỗi repo. Nhờ vậy tên không đụng hướng dẫn khác team đã có, và có thể đặt ở 1 trong 2 chỗ tuỳ nhu cầu:
+`codemap.instructions.md` uses the `.instructions.md` extension — VS Code's "path-specific instructions" convention (read by GitHub Copilot Chat, and in a similar way by Claude Code and Cursor), which differs from `copilot-instructions.md`, a fixed filename reserved for a single file at the root of each repo. Using this extension means the name does not collide with any other instructions a team already has, and it can be placed in one of two locations depending on your needs:
 
-### Cách A — 1 lần cho tất cả project (khuyến nghị nếu bạn quét nhiều repo, thêm/bớt liên tục)
+### Option A — set up once, applies to every project (recommended if you scan several repos and add or remove them over time)
 
 ```bash
 mkdir -p ~/.copilot/instructions
 cp setup/codemap.instructions.md ~/.copilot/instructions/codemap.instructions.md
 ```
 
-Trên Windows, `~` là `C:\Users\<tên bạn>\` — đường dẫn thật là
-`C:\Users\<tên bạn>\.copilot\instructions\codemap.instructions.md`.
+On Windows, `~` is `C:\Users\<your-name>\` — the real path is
+`C:\Users\<your-name>\.copilot\instructions\codemap.instructions.md`.
 
-Đây là vị trí **user-level, VS Code bật sẵn theo mặc định** (setting `chat.instructionsFilesLocations`) — verify trực tiếp từ mã nguồn VS Code, không phải suy đoán. File ở đây tự áp dụng cho **mọi workspace bạn mở trên máy này**, không quan tâm bạn đang mở project nào làm gốc, không cần copy lại khi thêm project mới vào `codemap.projects.json`. Làm **đúng 1 lần**, xong không phải nghĩ tới nữa dù sau này thêm bao nhiêu project.
+This is a **user-level location that VS Code enables by default** (setting `chat.instructionsFilesLocations`) — confirmed directly from the VS Code source, not assumed. A file here applies to **every workspace you open on this machine**, regardless of which project is the current root, and needs no re-copying when a new project is added to `codemap.projects.json`. Do this **once**, and it stays correct no matter how many projects get added later.
 
-Đánh đổi: chỉ có tác dụng trên máy bạn, đồng nghiệp clone repo về không tự có.
+Trade-off: it only takes effect on your machine — a colleague who clones the repo does not get it automatically.
 
-### Cách B — theo từng repo, chia sẻ được qua git
+### Option B — per repo, shareable via git
 
 ```bash
-mkdir -p <đường-dẫn-repo-đích>/.github/instructions
-cp setup/codemap.instructions.md <đường-dẫn-repo-đích>/.github/instructions/codemap.instructions.md
+mkdir -p <target-repo-path>/.github/instructions
+cp setup/codemap.instructions.md <target-repo-path>/.github/instructions/codemap.instructions.md
 ```
 
-Commit file này vào repo đích — đồng nghiệp clone về là có sẵn, không cần setup riêng. Vẫn tự động, không cần chỉnh setting gì, **nhưng chỉ có tác dụng khi workspace root đúng là repo đó** (hoặc repo đó là 1 folder gốc trong multi-root workspace) — mở nhầm thư mục cha chứa nhiều repo thì AI sẽ không thấy file này. Nếu chọn cách B mà có nhiều repo, lặp lại bước này cho từng repo.
+Commit this file into the target repo — a colleague who clones it has it immediately, with no separate setup. It is still automatic, with no setting to change, **but it only takes effect when the workspace root is exactly that repo** (or that repo is one of the root folders in a multi-root workspace) — opening a parent directory that contains several repos means an agent will not see this file. If you choose Option B for more than one repo, repeat this step for each of them.
 
-### Sau khi copy (áp dụng cho cả 2 cách)
+### After copying (applies to either option)
 
-File **không chứa đường dẫn cứng** — nó tự đọc `codemap.projects.json` để biết index nằm đâu, và `codemap.permissions.json` để biết lệnh nào tự chạy được. Ba chỗ nên xem lại:
+The file **contains no hardcoded paths** — it reads `codemap.projects.json` on its own to find the index, and `codemap.permissions.json` to know which commands it may run. Three things worth checking afterward:
 
-- Mục **"Ngôn ngữ"** đang viết sẵn cho codebase có commit tiếng Nhật. `commitLanguage` của bạn khác thì sửa lại.
-- Đảm bảo AI **tìm thấy** `codemap.projects.json` (theo thứ tự tìm kiếm ở Việc 1) — nếu bạn chọn Cách A (nhiều project), đặt `codemap.projects.json` ở `~/.codemap/` là hợp lý nhất, vì đó cũng là nơi mọi workspace đều thấy được, giống tinh thần của Cách A.
-- Nếu bạn không tạo `codemap.permissions.json`, AI mặc định coi mọi lệnh là phải hỏi trước — an toàn, không cần làm gì thêm.
+- The **"Language"** section is written for a codebase with Japanese commits. If your `commitLanguage` differs, update it to match.
+- Confirm an agent can actually **find** `codemap.projects.json` (following the search order from Task 1) — if you chose Option A (many projects), placing `codemap.projects.json` at `~/.codemap/` is the natural choice, since that's visible from every workspace, matching the spirit of Option A.
+- If you did not create `codemap.permissions.json`, an agent defaults to treating every command as needing confirmation first — safe, and nothing further to do.
 
-> **Vì sao không dùng `copilot-instructions.md`**: đó là tên file GitHub Copilot dành riêng cho đúng 1 file ở gốc workspace — nếu bạn (hoặc team) đã có hướng dẫn khác dùng tên đó, CodeMap sẽ ghi đè mất nội dung cũ. Đặt tên `codemap.instructions.md` để 2 file cùng tồn tại song song, mỗi file lo một việc.
+> **Why not use `copilot-instructions.md`**: that name is reserved by GitHub Copilot for a single file at the workspace root — if you (or your team) already use that name for something else, copying CodeMap's version over it would overwrite the existing content. The name `codemap.instructions.md` lets both files exist side by side, each handling its own concern.
 
-> **Chỉ chọn 1 trong 2 cách, đừng làm cả hai** cho cùng một repo. Khác với `codemap.projects.json` (bản gần hơn che khuất bản xa hơn), các file `.instructions.md` **cộng dồn** — nếu vừa có bản ở `~/.copilot/instructions/` vừa có bản ở `.github/instructions/` của cùng repo đó, AI nhận cả hai cùng lúc, nội dung trùng lặp bị gửi 2 lần cho model, tốn hơn chứ không sai.
+> **Choose only one of the two options** for a given repo, not both. Unlike `codemap.projects.json` (where the closer copy hides the farther one), `.instructions.md` files **stack** — if a repo has both a copy at `~/.copilot/instructions/` and one at `.github/instructions/`, an agent receives both at once, and the duplicated content is sent to the model twice. That costs more; it does not produce a wrong answer.
 
 ---
 
-## Lười? Để AI làm thay
+## Prefer not to do this yourself? Have an AI do it
 
-Mở [SETUP-PROMPT.md](SETUP-PROMPT.md), copy khối prompt trong đó dán vào Copilot Chat (chế độ Agent) / Claude Code / Cursor. Nó tự dò SDK, chọn cách cài phù hợp với quyền hạn máy bạn, hỏi bạn các đường dẫn rồi làm cả 3 việc trên.
+Open [SETUP-PROMPT.md](SETUP-PROMPT.md), copy the prompt block it contains, and paste it into Copilot Chat (Agent mode), Claude Code, or Cursor. It detects your SDK, chooses an install method that matches what your machine's policy allows, asks you for paths, and completes all four tasks above.
 
-Prompt cố tình **cấm agent tự `git clone`** và **cấm sửa PowerShell profile / PATH hệ thống** — bạn giữ quyền kiểm soát source lấy từ đâu, và không vướng chính sách máy công ty.
+The prompt deliberately **forbids the agent from running `git clone`** and **forbids editing the PowerShell profile or system PATH** — you keep control over where the source comes from, and nothing runs into corporate machine policy restrictions.

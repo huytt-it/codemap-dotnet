@@ -1,43 +1,43 @@
 # CodeMap
 
-Tool CLI quét codebase .NET và sinh ra file tĩnh (`.md`, `.jsonl`) để **đưa vào chat AI (GitHub Copilot)**, trả lời câu hỏi: *"sửa chỗ này thì ảnh hưởng tới đâu?"*
+A CLI tool that scans a .NET codebase and produces static files (`.md`, `.jsonl`) to attach to an AI chat (GitHub Copilot), answering the question: *"what does changing this affect?"*
 
-- Chạy **hoàn toàn offline**, không gọi mạng, không gửi code đi đâu.
-- **Chỉ đọc** solution của bạn, không bao giờ sửa file trong đó.
-- Không phải MCP server — bạn chạy lệnh trong terminal, rồi tự attach file kết quả vào chat AI.
+- Runs **fully offline** — no network calls, no code ever leaves your machine.
+- **Read-only** — it never modifies files in the solution it scans.
+- Not an MCP server — you run commands in a terminal, then attach the output files to a chat yourself.
 
 ---
 
-## Phần 1 — Cài đặt (làm 1 lần, máy nào cũng làm y hệt)
+## Part 1 — Setup (one time, identical on every machine)
 
-### Cần có sẵn
+### Prerequisites
 
-| Thứ | Bắt buộc? | Dùng để làm gì |
+| Requirement | Needed? | Purpose |
 |---|---|---|
-| **.NET SDK 8, 9 hoặc 10** | ✅ Bắt buộc | Build và chạy tool — **một bản bất kỳ trong ba là đủ**, không cần đúng .NET 8 |
-| **git** | ✅ Bắt buộc | Clone repo này, và lấy lịch sử ticket/cảnh báo index cũ khi dùng tool |
-| **node + npm** | Chỉ khi quét frontend | Đọc lời gọi API trong file Angular/TypeScript |
+| **.NET SDK 8, 9, or 10** | Required | Builds and runs the tool — **any one of the three is enough**, .NET 8 specifically is not required |
+| **git** | Required | Clones this repo, and reads ticket history / staleness warnings when the tool runs |
+| **node + npm** | Only for frontend scanning | Reads API calls in Angular/TypeScript files |
 
-Kiểm tra nhanh:
+Quick check:
 
 ```bash
 dotnet --list-sdks
 ```
 
-> Tool build ở `net8.0` nhưng bật `RollForward=Major`, nên **chạy được trên runtime 8, 9 hoặc 10**. Bạn không cần cài thêm .NET 8 chỉ để dùng nó. Codebase **đích** mà bạn đem đi quét cũng vậy — `net8.0`, `net9.0`, `net10.0` đều quét được (đã kiểm chứng thật).
+> The tool builds against `net8.0` but sets `RollForward=Major`, so it **runs on runtime 8, 9, or 10**. You do not need to install .NET 8 just to use it. The same applies to the codebase you scan — `net8.0`, `net9.0`, and `net10.0` targets are all supported (verified against real projects).
 
-### Lấy source code
+### Get the source
 
 ```bash
 git clone https://github.com/huytt-it/codemap-dotnet.git
 cd codemap-dotnet
 ```
 
-### Cài đặt — chọn 1 trong 2 cách
+### Install — pick one of two options
 
-#### Cách A (khuyến nghị): cài thành lệnh `codemap` thật
+#### Option A (recommended): install a real `codemap` command
 
-Không cần quyền admin, không sửa PowerShell profile, không tạo alias. Chạy 2 lệnh trong thư mục vừa clone:
+No admin rights, no PowerShell profile edits, no alias. Run two commands from the cloned directory:
 
 ```bash
 dotnet pack CodeMap.Cli -c Release
@@ -47,63 +47,63 @@ dotnet pack CodeMap.Cli -c Release
 dotnet tool install --global --add-source ./nupkg CodeMap.Cli
 ```
 
-Xong. Mở terminal mới rồi gõ `codemap` ở bất cứ đâu. Tool được cài vào thư mục người dùng (`~/.dotnet/tools`), không đụng gì tới hệ thống.
+Done. Open a new terminal and type `codemap` from anywhere. The tool installs into your user directory (`~/.dotnet/tools`) and does not touch the system.
 
-Sau này pull code mới về thì cập nhật bằng:
+To update after pulling new code:
 
 ```bash
 dotnet pack CodeMap.Cli -c Release; dotnet tool update --global --add-source ./nupkg CodeMap.Cli
 ```
 
-> **Nếu gõ `codemap` báo "command not found"**: thư mục `~/.dotnet/tools` chưa nằm trong PATH (hiếm, thường bộ cài .NET SDK tự thêm). Gọi đầy đủ `"$HOME/.dotnet/tools/codemap"` cũng chạy y hệt.
+> **If `codemap` reports "command not found"**: `~/.dotnet/tools` is not on PATH (rare — the .NET SDK installer usually adds it automatically). Calling it by full path, `"$HOME/.dotnet/tools/codemap"`, works the same way.
 
-#### Cách B: không cài gì, gọi thẳng file dll
+#### Option B: no install, call the dll directly
 
-Dùng khi chính sách máy chặn cả `dotnet tool install`:
+Use this when local policy blocks `dotnet tool install`:
 
 ```bash
 dotnet build CodeMap.Cli -c Release
 ```
 
-Sau đó thay mọi chữ `codemap` trong tài liệu này bằng `dotnet "<đường-dẫn-repo>\CodeMap.Cli\bin\Release\net8.0\CodeMap.Cli.dll"`, trong đó `<đường-dẫn-repo>` là thư mục bạn vừa clone.
+Then replace every `codemap` in this document with `dotnet "<repo-path>\CodeMap.Cli\bin\Release\net8.0\CodeMap.Cli.dll"`, where `<repo-path>` is the directory you cloned into.
 
-### Kiểm tra cài đúng (khuyến khích cho máy mới)
+### Verify the install (recommended on a new machine)
 
 ```bash
 dotnet test tests/CodeMap.Tests
 ```
 
-Toàn bộ test phải pass. Nếu đỏ ngay từ máy mới clone, kiểm tra `dotnet --list-sdks` trước khi báo lỗi.
+All tests should pass. If they fail right after a fresh clone, check `dotnet --list-sdks` before assuming something else is wrong.
 
-Đổi máy khác (hoặc đồng nghiệp clone lại) thì làm lại từ đầu Phần 1 — không có bước nào phụ thuộc vào máy cũ.
+Setting up on another machine, or having a colleague clone the repo, means repeating Part 1 from the top — no step depends on the previous machine's state.
 
-### Lười đọc? Bảo AI setup hộ
+### Prefer not to read all this? Have an AI do it
 
-Clone repo này về (bước "Lấy source code" ở trên) rồi mở [setup/SETUP-PROMPT.md](setup/SETUP-PROMPT.md), copy nguyên khối prompt trong đó dán vào Copilot / Claude Code / Cursor — nó sẽ tự dò SDK, chọn cách cài phù hợp với quyền hạn máy bạn, khai báo `codemap.projects.json` và quét. Prompt cố tình **cấm agent tự `git clone`**: bạn clone, rồi chỉ đường dẫn cho nó.
+Clone this repo (the "Get the source" step above), then open [setup/SETUP-PROMPT.md](setup/SETUP-PROMPT.md) and paste the prompt block it contains into Copilot, Claude Code, or Cursor. It will detect your SDK, choose an install method that matches what your machine's policy allows, declare `codemap.projects.json`, and run the scan. The prompt deliberately **forbids the agent from running `git clone` itself**: you clone, then hand it the path.
 
 ---
 
-## Phần 2 — Khai báo project rồi quét (cách khuyến nghị)
+## Part 2 — Declare projects, then scan (recommended)
 
-Thay vì nhớ 4 đường dẫn tuyệt đối cho mỗi repo, khai báo **một lần** vào file `codemap.projects.json`, rồi mọi lệnh về sau chỉ cần `--project <tên>`.
+Instead of remembering four absolute paths per repo, declare each codebase **once** in `codemap.projects.json`; every command after that just needs `--project <name>`.
 
-### Bước 1 — Tạo `codemap.projects.json`
+### Step 1 — Create `codemap.projects.json`
 
-Có sẵn template kèm 3 ví dụ trong [setup/](setup/) — copy ra rồi điền:
+A template with three worked examples is provided in [setup/](setup/) — copy it and fill it in:
 
 ```bash
 cp setup/codemap.projects.example.json setup/codemap.projects.json
 ```
 
-Đặt ở đâu cũng được: trong `setup/`, gốc repo, một thư mục "workspace" chung, hoặc `~/.codemap/`. Tool tìm theo thứ tự `--config` → thư mục hiện tại rồi ngược lên các thư mục cha → `~/.codemap/`.
+It can live anywhere: inside `setup/`, at a repo root, in a shared workspace directory, or at `~/.codemap/`. The tool searches in this order: `--config` → the current directory, then its parent directories → `~/.codemap/`.
 
 ```json
 {
-  "description": "Các codebase tôi đang index",
+  "description": "Codebases I'm indexing",
   "projects": [
     {
       "name": "shop",
-      "description": "Backend đơn hàng — Razor Pages + PublicApi",
+      "description": "Order backend — Razor Pages + PublicApi",
       "solution": "D:/Repos/Shop/Shop.sln",
       "output": "D:/CodeMapIndex/Shop",
       "frontend": "D:/Repos/Shop.Web",
@@ -111,7 +111,7 @@ cp setup/codemap.projects.example.json setup/codemap.projects.json
     },
     {
       "name": "billing",
-      "description": "Dịch vụ hoá đơn, tách riêng",
+      "description": "Standalone billing service",
       "solution": "D:/Repos/Billing/Billing.slnx",
       "output": "D:/CodeMapIndex/Billing",
       "commitLanguage": "en"
@@ -120,83 +120,83 @@ cp setup/codemap.projects.example.json setup/codemap.projects.json
 }
 ```
 
-| Khoá | Bắt buộc? | Ý nghĩa |
+| Key | Required? | Meaning |
 |---|---|---|
-| `name` | ✅ | Tên ngắn dùng cho `--project`. Không phân biệt hoa thường, không được trùng nhau. |
-| `solution` | ✅ | File `.sln` hoặc `.slnx` cần quét. |
-| `output` | ✅ | Thư mục output. **Index nằm ở `<output>/index`**, `MAP.md` ở `<output>/MAP.md`. |
-| `description` | — | Mô tả cho người (và AI) đọc hiểu codebase này là gì. |
-| `repo` | — | Gốc git. Bỏ trống thì lấy thư mục chứa solution. |
-| `frontend` | — | Thư mục Angular/TypeScript. Bỏ trống thì bỏ qua hẳn bước quét FE. |
-| `commitLanguage` | — | Ngôn ngữ team viết commit (`ja`/`vi`/`en`...). AI đọc để biết nên hỏi `where` bằng ngôn ngữ nào. |
+| `name` | Required | Short name used with `--project`. Case-insensitive, must be unique. |
+| `solution` | Required | The `.sln` or `.slnx` file to scan. |
+| `output` | Required | Output directory. **The index lives at `<output>/index`**, `MAP.md` at `<output>/MAP.md`. |
+| `description` | — | A description for people (and AI) to understand what this codebase is. |
+| `repo` | — | Git root. Defaults to the solution's own directory if left blank. |
+| `frontend` | — | Angular/TypeScript directory. Leave blank to skip the frontend scan entirely. |
+| `commitLanguage` | — | Language the team writes commits in (`ja`/`vi`/`en`/...). Tells an AI agent which language to phrase `where` queries in. |
 
-> Đường dẫn có thể là **tương đối** — tính từ vị trí chính file `codemap.projects.json`, không phải từ thư mục bạn đang đứng. Nhờ vậy cả cây thư mục copy sang máy khác vẫn chạy.
+> Paths can be **relative** — resolved against the location of `codemap.projects.json` itself, not against your current working directory. That means the whole directory tree still works after being copied to another machine.
 
-### Bước 2 — Quét
+### Step 2 — Scan
 
 ```bash
 codemap sync --project shop
 ```
 
-Một lệnh chạy trọn `scan` → `scan-git` → `scan-fe` → `link` → `map`, đúng thứ tự phụ thuộc dữ liệu. Quét tất cả project cùng lúc:
+One command runs `scan` → `scan-git` → `scan-fe` → `link` → `map`, in the order their data dependencies require. To scan every declared project at once:
 
 ```bash
 codemap sync --all
 ```
 
-`scan` lỗi thì dừng project đó lại (index dở còn tệ hơn không có). `scan-git` và `scan-fe` chỉ là bổ sung — repo chưa có git hay không có FE riêng thì bỏ qua và vẫn ra `MAP.md` dùng được.
+If `scan` fails, that project's run stops there — a half-built index is worse than none. `scan-git` and `scan-fe` are optional enrichment: a repo with no git history, or no separate frontend, still produces a usable `MAP.md`.
 
-### Bước 3 — Kiểm tra
+### Step 3 — Check
 
 ```bash
 codemap projects
 ```
 
-Liệt kê mọi project, đường dẫn thật sau khi resolve, và **trạng thái index**: đã build chưa, bao nhiêu symbol, quét lúc nào, cách đây mấy ngày.
+Lists every project, its resolved paths, and **index status**: whether it has been built, how many symbols, when it was last scanned, and how many days ago.
 
-### Dùng hằng ngày
+### Day-to-day use
 
 ```bash
 codemap where --project shop --query "注文のキャンセル"
 ```
 
-Mọi lệnh query (`find`, `where`, `impact`, `slice`, `map`, `link`) đều nhận `--project <tên>` thay cho `--index <đường dẫn dài>`.
+Every query command (`find`, `where`, `impact`, `slice`, `map`, `link`) accepts `--project <name>` in place of a long `--index <path>`.
 
 ---
 
-## Phần 2b — Quét thủ công, không dùng file config
+## Part 2b — Manual scanning, without the config file
 
-Vẫn chạy được bình thường nếu bạn không muốn tạo `codemap.projects.json`.
+Everything still works without creating `codemap.projects.json`.
 
-Giả sử repo của bạn ở `D:\Repos\MyApp`, solution là `D:\Repos\MyApp\MyApp.sln`.
+Assume your repo is at `D:\Repos\MyApp`, with solution `D:\Repos\MyApp\MyApp.sln`.
 
-**Quan trọng:** luôn `cd` vào thư mục repo trước khi chạy — tool dùng thư mục hiện tại để kiểm tra index còn mới hay đã cũ.
+**Important:** always `cd` into the repo before running a command — the tool uses the current directory to check whether the index is stale.
 
 ```bash
 cd D:\Repos\MyApp
 ```
 
-### Bước 1 — Quét backend (bắt buộc)
+### Step 1 — Scan the backend (required)
 
 ```bash
 codemap scan --solution MyApp.sln --out D:\CodeMapIndex\MyApp
 ```
 
-`--solution` nhận **cả `.sln` lẫn `.slnx`** (định dạng XML mà .NET 10 SDK sinh ra mặc định).
+`--solution` accepts **both `.sln` and `.slnx`** (the XML format the .NET 10 SDK generates by default).
 
-> **Nếu bước này lỗi:** thử `dotnet restore` trong repo trước. Vẫn lỗi thì thêm `--syntax-only` — quét ở mức nông hơn, không cần solution build được, nhưng kết quả kém chi tiết hơn.
+> **If this step fails:** try `dotnet restore` in the repo first. If it still fails, add `--syntax-only` — a shallower scan that does not require the solution to build, at the cost of less detail.
 >
-> Nếu repo có **cả `.sln` lẫn `.slnx`** (thường gặp khi đang chuyển đổi format), `dotnet restore` trần sẽ báo lỗi MSB1011 vì không biết chọn file nào — chỉ định rõ: `dotnet restore MyApp.sln`.
+> If the repo has **both `.sln` and `.slnx`** (common mid-migration), a bare `dotnet restore` fails with MSB1011 because it cannot pick one — name it explicitly: `dotnet restore MyApp.sln`.
 
-### Bước 2 — Quét lịch sử git (nên làm)
+### Step 2 — Scan git history (recommended)
 
 ```bash
 codemap scan-git --repo . --out D:\CodeMapIndex\MyApp
 ```
 
-> **Nếu báo "No ticket ID matched":** repo của bạn đặt tên commit khác quy ước mặc định (`#1234`, `TICKET-1234`, `BUG-1234`, `JIRA-1234`). Tạo file `codemap.config.json` ở gốc repo — xem [Phần 5](#phần-5--cấu-hình-tùy-chọn).
+> **If it reports "No ticket ID matched":** your repo names commits differently from the default convention (`#1234`, `TICKET-1234`, `BUG-1234`, `JIRA-1234`). Create a `codemap.config.json` at the repo root — see [Part 5](#part-5--configuration-optional).
 
-### Bước 3 — Quét frontend (bỏ qua nếu không có FE riêng)
+### Step 3 — Scan the frontend (skip if there is no separate frontend)
 
 ```bash
 codemap scan-fe --root D:\Repos\MyApp.Web --out D:\CodeMapIndex\MyApp
@@ -206,96 +206,96 @@ codemap scan-fe --root D:\Repos\MyApp.Web --out D:\CodeMapIndex\MyApp
 codemap link --index D:\CodeMapIndex\MyApp\index
 ```
 
-> **Lưu ý:** thư mục frontend phải đã chạy `npm install` (cần `node_modules/typescript`). Nếu chưa, tool vẫn chạy nhưng bỏ qua phần Angular, chỉ quét jQuery — và báo rõ trên màn hình.
+> **Note:** the frontend directory must already have `npm install` run (needs `node_modules/typescript`). If not, the tool still runs but skips Angular, scanning jQuery only — and says so clearly on screen.
 
-### Bước 4 — Sinh bản đồ tổng quan
+### Step 4 — Generate the overview map
 
 ```bash
 codemap map --index D:\CodeMapIndex\MyApp\index --out D:\CodeMapIndex\MyApp
 ```
 
-Mở `D:\CodeMapIndex\MyApp\MAP.md` xem thử. File này người đọc được, ≤ 500 dòng.
+Open `D:\CodeMapIndex\MyApp\MAP.md` to see the result. It is human-readable and capped at 500 lines.
 
 ---
 
-## Phần 3 — Dùng hằng ngày
+## Part 3 — Day-to-day use
 
-### Tình huống A: "Tôi sắp sửa method này, có nguy hiểm không?"
+### Scenario A: "I'm about to change this method — is it risky?"
 
-**Bước 1 — tìm mã định danh của method** (không ai gõ tay được cái này):
+**Step 1 — find the method's identifier** (nobody types this by hand):
 
 ```bash
 codemap find --index D:\CodeMapIndex\MyApp\index --query "OrderService.Cancel"
 ```
 
-Copy dòng `M:...` ở kết quả.
+Copy the `M:...` line from the result.
 
-**Bước 2 — xem ảnh hưởng:**
+**Step 2 — check the impact:**
 
 ```bash
 codemap impact --index D:\CodeMapIndex\MyApp\index --symbol "M:Orders.OrderService.Cancel(System.Int32)" --out impact.md
 ```
 
-Mở `impact.md`, hoặc **attach thẳng vào chat Copilot** rồi hỏi bình thường.
+Open `impact.md`, or **attach it directly to a Copilot chat** and ask normally.
 
-### Tình huống B: "Ticket nói 'sửa lỗi hủy đơn hàng' — code nằm đâu?"
+### Scenario B: "The ticket says 'fix order cancellation' — where is that in the code?"
 
 ```bash
 codemap where --index D:\CodeMapIndex\MyApp\index --query "hủy đơn hàng"
 ```
 
-Trả về danh sách ứng viên **kèm lý do được chọn**. Lấy mã `M:...` phù hợp rồi đưa vào `impact` như trên.
+Returns a list of candidates **with the reason each was picked**. Take the matching `M:...` identifier and feed it to `impact` as above.
 
-### Tình huống C: "Tôi cần xem code thật + đường đi từ API tới đây"
+### Scenario C: "I need the real code, plus the path from the API to here"
 
 ```bash
 codemap slice --index D:\CodeMapIndex\MyApp\index --symbol "M:Orders.OrderService.Cancel(System.Int32)" --out slice.md
 ```
 
-`slice` đọc code **trực tiếp từ file trên đĩa lúc chạy**, nên dù index quét từ hôm qua, code trong file kết quả vẫn là code mới nhất.
+`slice` reads code **directly from disk at run time**, so even if the index was scanned yesterday, the code in the output file is current.
 
-### Khác nhau giữa `impact` và `slice`
+### `impact` vs. `slice`
 
 | | `impact` | `slice` |
 |---|---|---|
-| Trả lời | "Có dám đụng không?" | "Đụng thì đụng cái gì?" |
-| Nội dung | Danh sách gọn, đọc 10 giây | Có kèm code thật, ticket cũ |
-| Khi nào dùng | Trước khi quyết định | Sau khi đã quyết định đào sâu |
+| Answers | "Is this safe to touch?" | "What exactly does it touch?" |
+| Content | A compact list, readable in ten seconds | Real code included, plus past tickets |
+| When to use | Before deciding | After deciding to dig in |
 
 ---
 
-## Phần 4 — Cập nhật lại index
+## Part 4 — Refreshing the index
 
-Tool **không** tự cập nhật. Code đổi thì index cũ dần.
+The tool does **not** update itself. As code changes, the index gets stale.
 
-Không sao cả — mọi file `.md` sinh ra đều có dòng cảnh báo ở đầu, kiểu:
+That is expected — every generated `.md` file carries a warning banner at the top, of the form:
 
 ```
 current HEAD b7e1d04 · 11 commit(s) behind, 6 relevant file(s) changed since the scan
 ```
 
-Thấy con số lớn thì quét lại: `codemap sync --project <tên>` (hoặc `--all`). Ghi đè lên thư mục cũ, an toàn. Không dùng file config thì chạy lại các lệnh ở [Phần 2b](#phần-2b--quét-thủ-công-không-dùng-file-config).
+Once that number grows, scan again: `codemap sync --project <name>` (or `--all`). It overwrites the old output directory safely. Without a config file, repeat the commands in [Part 2b](#part-2b--manual-scanning-without-the-config-file).
 
-> Ghi chú tay của bạn trong `MAP.md` (phần giữa `<!-- human:start -->` và `<!-- human:end -->`) **luôn được giữ lại** khi quét lại. Cứ ghi chú thoải mái vào đó.
+> Your handwritten notes in `MAP.md` (between `<!-- human:start -->` and `<!-- human:end -->`) are **always preserved** on re-scan. Add notes there freely.
 
-Muốn tự động quét mỗi đêm (hiện **đang tắt**, đang chạy tay): xem `docs/OPS-NIGHTLY-SCAN.md` — tài liệu nội bộ, không có trong repo public (xem ghi chú ở mục "Tài liệu thêm" cuối trang).
+For automated nightly scans (currently **disabled**, run by hand): see `docs/OPS-NIGHTLY-SCAN.md` — an internal document, not included in the public repo (see the "Further documentation" section below).
 
 ---
 
-## Phần 5 — Cấu hình (tùy chọn)
+## Part 5 — Configuration (optional)
 
-Có **hai** file config, khác nhau hoàn toàn, đừng nhầm:
+There are **two** config files, entirely unrelated — do not confuse them:
 
-| File | Đặt ở đâu | Trả lời câu hỏi |
+| File | Location | Answers |
 |---|---|---|
-| `codemap.projects.json` | Nơi bạn chọn (workspace, hoặc `~/.codemap/`) | **Quét cái gì, kết quả để đâu** — xem [Phần 2](#phần-2--khai-báo-project-rồi-quét-cách-khuyến-nghị) |
-| `codemap.config.json` | **Gốc của repo bị quét** | **Quét như thế nào** — quy ước riêng của repo đó (dưới đây) |
+| `codemap.projects.json` | Wherever you choose (a workspace, or `~/.codemap/`) | **What to scan, where output goes** — see [Part 2](#part-2--declare-projects-then-scan-recommended) |
+| `codemap.config.json` | **Root of the repo being scanned** | **How to scan** — that repo's own conventions (below) |
 
-Một repo có quy ước lạ thì cần file thứ hai; nhiều repo cùng lúc thì cần file thứ nhất. Không liên quan gì nhau, có thể dùng một hoặc cả hai.
+A repo with unusual conventions needs the second file; scanning several repos at once needs the first. They are independent — use either, both, or neither.
 
-### `codemap.config.json` — quy ước riêng của repo
+### `codemap.config.json` — a repo's own conventions
 
-Tạo ở **gốc repo bị quét** nếu cần. Không có file này thì tool dùng mặc định, vẫn chạy bình thường.
+Create this at the **root of the repo being scanned**, if needed. Without it, the tool falls back to sensible defaults and still runs normally.
 
 ```json
 {
@@ -305,38 +305,38 @@ Tạo ở **gốc repo bị quét** nếu cần. Không có file này thì tool 
 }
 ```
 
-| Khóa | Khi nào cần |
+| Key | When it's needed |
 |---|---|
-| `ticketPattern` | Commit của team đặt mã ticket theo kiểu khác (vd `ABC-123`) |
-| `diAttribute` | Team dùng attribute tự viết để đánh dấu DI thay vì `AddScoped/AddSingleton` |
-| `frontendAppDir` | Frontend không theo cấu trúc `src/app/` chuẩn của Angular CLI |
+| `ticketPattern` | The team's commit convention uses a different ticket format (e.g. `ABC-123`) |
+| `diAttribute` | The team marks DI with a custom attribute instead of `AddScoped`/`AddSingleton` |
+| `frontendAppDir` | The frontend does not follow Angular CLI's standard `src/app/` layout |
 
 ---
 
-## Phần 6 — Gặp lỗi thì làm gì
+## Part 6 — Troubleshooting
 
-| Hiện tượng | Cách xử lý |
+| Symptom | What to do |
 |---|---|
-| `scan` báo project bị "degraded" | Bình thường — project đó không build được, tool tự hạ xuống mức quét nông và **vẫn chạy tiếp**. Xem lý do trong `index\diagnostics.json`. |
-| `impact` trả về 0 entry point | Tăng `--depth` (mặc định 5). Hoặc method đó thật sự không ai gọi. Hoặc entry point là dạng tool chưa nhận diện được (xem [FEATURES.md](docs/FEATURES.md) phần giới hạn). |
-| `slice` báo "Could not re-locate this symbol" | Symbol đã bị đổi tên/xóa sau lần quét. Quét lại rồi `find` lại để lấy mã mới. |
-| `where` không ra gì | Tool báo rõ là "không tìm thấy", không đoán bừa. Thử lại bằng đúng ngôn ngữ team viết commit/ticket (tín hiệu mạnh nhất của `where` là khớp message ticket cũ), hoặc thử `find` với từ khóa tiếng Anh nếu đã đoán được tên symbol. |
-| `scan-fe` báo "typescript package not found" | Chạy `npm install` trong thư mục frontend trước. |
+| `scan` reports a project as "degraded" | Normal — that project failed to build, so the tool falls back to a shallower scan and **keeps going**. Check the reason in `index\diagnostics.json`. |
+| `impact` returns 0 entry points | Increase `--depth` (default 5). Or the method genuinely has no callers. Or the entry point is a kind the tool doesn't yet recognize (see the limitations in [FEATURES.md](docs/FEATURES.md)). |
+| `slice` reports "Could not re-locate this symbol" | The symbol was renamed or removed since the last scan. Re-scan, then run `find` again to get the current identifier. |
+| `where` returns nothing | The tool reports "not found" honestly rather than guessing. Retry in the language the team actually writes commits/tickets in (`where`'s strongest signal is matching past ticket messages), or try `find` with an English term if you already have a guess at the symbol name. |
+| `scan-fe` reports "typescript package not found" | Run `npm install` in the frontend directory first. |
 
-**Nguyên tắc chung của tool:** chỗ nào không phân tích được thì ghi vào `diagnostics.json` và mục "Blind spots" trong report — **không bao giờ đoán bừa rồi im lặng**. Nếu report nói không biết, tức là thật sự không biết, đừng bỏ qua.
+**The tool's general principle:** anything it cannot analyze goes into `diagnostics.json` and the "Blind spots" section of the report — **it never guesses silently**. If a report says it doesn't know, that means it genuinely doesn't — don't disregard that.
 
 ---
 
-## Cho AI agent đọc (GitHub Copilot, Claude...)
+## For AI agents to read (GitHub Copilot, Claude, ...)
 
-[setup/codemap.instructions.md](setup/codemap.instructions.md) là bản hướng dẫn đầy đủ cho AI: quy trình hỏi-đáp, cách đọc report, ngôn ngữ nào dùng cho `where`, các điều cấm. Nó không chứa đường dẫn cứng — tự đọc `codemap.projects.json` để biết index nằm đâu.
+[setup/codemap.instructions.md](setup/codemap.instructions.md) is the full instruction set for an AI agent: the question-and-answer workflow, how to read a report, which language to use for `where`, and what is off-limits. It contains no hardcoded paths — it reads `codemap.projects.json` itself to find the index.
 
-Đặt file này ở **`~/.copilot/instructions/`** (áp dụng cho mọi project trên máy bạn, tốt nhất nếu quét nhiều repo và thêm/bớt theo thời gian) hoặc **`<repo đích>/.github/instructions/`** (theo từng repo, chia sẻ được qua git) — cả hai đều VS Code tự đọc, không cần chỉnh setting. Chi tiết và lý do chọn cách nào ở "Việc 4" trong [setup/README.md](setup/README.md).
+Place this file at **`~/.copilot/instructions/`** (applies to every project on your machine — the better choice if you scan multiple repos and add or remove them over time) or at **`<target-repo>/.github/instructions/`** (per-repo, shareable via git). Both are read automatically by VS Code, no setting changes needed. See "Task 4" in [setup/README.md](setup/README.md) for details on choosing between them.
 
-Mặc định agent **không tự chạy `codemap`** — nó in lệnh, bạn tự chạy tay. Muốn cho agent tự chạy các lệnh chỉ-đọc (`find`/`where`/`impact`/`slice`), cấu hình [setup/codemap.permissions.json](setup/codemap.permissions.json) — xem "Việc 3" trong [setup/README.md](setup/README.md).
+By default, an agent **does not run `codemap` itself** — it prints the command and you run it. To let an agent run the read-only commands (`find`/`where`/`impact`/`slice`) on its own, configure [setup/codemap.permissions.json](setup/codemap.permissions.json) — see "Task 3" in [setup/README.md](setup/README.md).
 
-## Tài liệu thêm
+## Further documentation
 
-- **[setup/](setup/)** — mọi thứ cần điền, gom một chỗ: template `codemap.projects.json`, prompt cho AI, và file hướng dẫn agent. Xem [setup/README.md](setup/README.md).
-- [docs/FEATURES.md](docs/FEATURES.md) — tool làm được gì, **không** làm được gì (nên đọc trước khi tin kết quả)
-- `docs/CODEMAP-SPEC.md`, `docs/OPS-NIGHTLY-SCAN.md`, `docs/TEST-REPORT-PHASE*.md` — tài liệu nội bộ (spec thiết kế, vận hành quét đêm, báo cáo test từng giai đoạn). **Không có trong repo public** — chỉ tồn tại trong bản làm việc gốc, chưa được đẩy lên git.
+- **[setup/](setup/)** — everything you need to fill in, in one place: the `codemap.projects.json` template, the AI setup prompt, and the agent instructions file. See [setup/README.md](setup/README.md).
+- [docs/FEATURES.md](docs/FEATURES.md) — what the tool can and cannot do (worth reading before trusting its output)
+- `docs/CODEMAP-SPEC.md`, `docs/OPS-NIGHTLY-SCAN.md`, `docs/TEST-REPORT-PHASE*.md` — internal documents (design spec, nightly-scan operations, phase-by-phase test reports). **Not included in the public repo** — these exist only in the original working copy and have not been pushed.
