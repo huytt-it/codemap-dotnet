@@ -31,6 +31,16 @@ description: "CodeMap — cách dùng chỉ số codebase tĩnh (offline) khi tr
 **Việc đầu tiên mỗi session, trước khi in bất kỳ lệnh nào:** mở file `codemap.projects.json`
 (tìm ở gốc repo, các thư mục cha, hoặc `~/.codemap/`). File đó khai báo mọi codebase đã index:
 
+**Tìm file này bằng terminal thật (`cat`, `ls`, hoặc chạy thẳng `codemap projects`), KHÔNG dùng
+công cụ tìm kiếm file có sẵn của bạn (semantic search / file search nội bộ).** Công cụ đó chỉ
+thấy file bên trong workspace đang mở — `~/.codemap/` và `~/.copilot/instructions/` nằm ở thư
+mục người dùng, ngoài mọi workspace, nên tìm bằng công cụ đó luôn ra "no matches" **dù file có
+tồn tại thật**. Đây là nguyên nhân thật đã xảy ra: agent search file nội bộ, nhận "no matches",
+rồi bỏ cuộc quay về grep — trong khi `codemap projects` chạy qua terminal vẫn tìm thấy đúng file
+đó bình thường, bất kể cwd. "No matches" từ công cụ search nội bộ **không phải bằng chứng file
+không tồn tại** — chỉ có `codemap projects` (hoặc `ls ~/.codemap/`) qua terminal mới là bằng
+chứng thật.
+
 ```json
 {
   "projects": [
