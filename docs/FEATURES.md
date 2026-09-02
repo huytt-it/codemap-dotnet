@@ -106,6 +106,17 @@ Dừng hẳn, báo lỗi rõ (exit 1):
 - **Repo không có commit nào**, hoặc `--since` quá hẹp.
 - **Không commit nào khớp mẫu ticket.** Tool probe 200 commit đầu; không khớp thì **từ chối ghi file rỗng** và bảo bạn đặt `ticketPattern` trong `codemap.config.json`. Đây là ca hay gặp nhất.
 
+### `ticketPattern`: hai cách sai mà tool không bắt được
+
+Mẫu mặc định là `(?:#|TICKET-|BUG-|JIRA-)(\d{3,6})`. Probe chỉ kiểm "có khớp cái gì không", không kiểm "có khớp đúng thứ bạn muốn không":
+
+- **Số PR bị nhận nhầm thành ticket.** GitHub squash-merge gắn `(#1019)` vào cuối message, mẫu mặc định khớp đúng cái đó. Trên repo eShop thật, 292 commit khớp và ticket sinh ra chính là số PR. Không sai về kỹ thuật (PR cũng là một đơn vị thay đổi), nhưng nếu team dùng mã ticket riêng thì đây không phải thứ bạn muốn — mà không có cảnh báo nào.
+- **Nhóm bắt chỉ lấy phần số làm gộp nhầm ticket.** Tool lấy nhóm bắt thứ nhất làm ID ([TicketExtractor.cs](../CodeMap.Query/Git/TicketExtractor.cs)). Với `(?:SHO|MONKAI)_(\d+)`, hai ticket `SHO_1234` và `MONKAI_1234` cùng ra ID `1234` và bị trộn thành một. Bắt cả cụm thay vì phần số: `([A-Z][A-Z0-9]*_\d+)` — cũng không cần liệt kê prefix, thêm dự án mới vẫn khớp.
+
+Trong JSON phải escape thành `"([A-Z][A-Z0-9]*_\d+)"`. Viết `\d` thì tool báo lỗi parse rõ ràng chứ không bỏ qua.
+
+Cách kiểm nhanh: chạy `git log --pretty=format:%s -80`, rồi sau khi `scan-git` xong, mở `<output>/index/ticket-files.jsonl` xem 10 dòng đầu — ID sinh ra có đúng là mã ticket của team không.
+
 Chạy xong, báo thành công, nhưng dữ liệu thiếu — cần tự biết:
 
 - **Shallow clone** (`git clone --depth`, checkout mặc định của nhiều CI): lịch sử bị cắt cụt.

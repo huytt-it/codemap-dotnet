@@ -118,10 +118,30 @@ một bản `codemap.projects.json` khác đang che khuất, phải tìm và xo�
 Lưu ý khi chạy:
 - `scan` lỗi → thử `dotnet restore` trong repo trước, rồi chạy lại. Vẫn lỗi thì báo tôi;
   còn cách `codemap scan --solution ... --out ... --syntax-only` quét nông hơn.
-- `scan-git` báo "No ticket ID matched" → quy ước commit của team tôi khác mặc định
-  (`#123`, `TICKET-123`, `BUG-123`, `JIRA-123`). Hỏi tôi quy ước thật, rồi tạo
-  `codemap.config.json` ở GỐC REPO BỊ QUÉT với khoá `ticketPattern`. Lưu ý đây là file khác
-  với `codemap.projects.json` ở Bước 4 — đừng gộp làm một.
+- **Quy ước ticket: kiểm TRƯỚC khi chạy, đừng chờ lỗi.** Chạy `git log --pretty=format:%s -80`
+  trong repo đích, đọc message thật, rồi tự quyết định có cần `ticketPattern` riêng không.
+  Mẫu mặc định là `(?:#|TICKET-|BUG-|JIRA-)(\d{3,6})`. Ba điều phải tự kiểm:
+
+  1. **Mặc định "khớp" không có nghĩa là khớp đúng.** GitHub squash-merge gắn số PR vào cuối
+     message (`Fix cancel order (#1019)`), và mẫu mặc định khớp đúng cái đó — kết quả là gom
+     commit theo **số PR**, không phải theo ticket, mà không báo lỗi gì. Nếu message có prefix
+     dự án riêng (`SHO_1234`, `MONKAI_1234`, `ABC-42`...), phải đặt `ticketPattern` cho khớp
+     prefix đó, kể cả khi mặc định không báo lỗi.
+  2. **Nhóm bắt phải bao cả cụm, không chỉ phần số.** Tool lấy nhóm bắt thứ nhất làm ID ticket.
+     Viết `(?:SHO|MONKAI)_(\d+)` thì `SHO_1234` và `MONKAI_1234` cùng ra ID `1234` và **bị gộp
+     thành một ticket** — sai dữ liệu, không có cảnh báo. Viết `([A-Z][A-Z0-9]*_\d+)` để ID là
+     cả cụm `SHO_1234`; mẫu này cũng không cần liệt kê prefix nên thêm dự án mới vẫn tự khớp.
+  3. **Trong JSON phải escape thành `\d`.** Viết `\d` thì tool báo lỗi parse rõ ràng, sửa lại.
+
+  Đặt file ở **GỐC REPO BỊ QUÉT** với tên `codemap.config.json` (khác `codemap.projects.json` ở
+  Bước 4 — đừng gộp làm một). Chạy `scan-git` xong thì **in cho tôi 10 ticket đầu trong
+  `<output>/index/ticket-files.jsonl`** và hỏi lại: đây có đúng là mã ticket của team tôi không,
+  hay là số PR. Chỉ đi tiếp khi tôi xác nhận.
+
+  Nếu `scan-git` báo thẳng "No ticket ID matched" thì cũng làm đúng quy trình trên. Ngoài ra
+  nhớ: team không squash mà giữ merge commit thì ticket ID phải nằm trong **từng commit của
+  nhánh** — `git log --name-only` không sinh danh sách file cho merge commit, nên message
+  `Merge pull request #4 from ...` không đóng góp dữ liệu nào.
 - `scan-fe` bị bỏ qua → thư mục FE phải đã chạy `npm install`. Không có FE riêng thì đúng là
   phải bỏ qua, đừng bịa ra.
 
