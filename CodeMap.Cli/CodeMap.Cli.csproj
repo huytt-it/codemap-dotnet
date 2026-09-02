@@ -5,6 +5,25 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <!-- Build for net8.0 but RUN on whatever major runtime the machine has. Without this, a machine with only
+         the .NET 9 or .NET 10 runtime installed refuses to start a net8.0 app ("framework 'Microsoft.NETCore.App'
+         version '8.0.0' was not found"), which forces every user onto an extra runtime install they don't
+         otherwise need. Targeting net8.0 stays deliberate: it is the lowest runtime we support, and a lower
+         target runs on more machines, not fewer. -->
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+
+  <!-- Installing this as a global dotnet tool puts a real `codemap` command on PATH, with no shell alias and no
+       profile edit (see README) — which matters on locked-down machines where editing the PowerShell profile,
+       or writing to a machine-wide PATH, is blocked by policy. -->
+  <PropertyGroup>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>codemap</ToolCommandName>
+    <PackageId>CodeMap.Cli</PackageId>
+    <Version>1.0.0</Version>
+    <PackageOutputPath>$(MSBuildThisFileDirectory)..\nupkg</PackageOutputPath>
+    <Description>Offline .NET codebase index for AI assistants: scan a solution and query "what does changing this affect?"</Description>
   </PropertyGroup>
 
   <ItemGroup>

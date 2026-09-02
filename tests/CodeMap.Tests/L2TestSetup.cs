@@ -24,7 +24,10 @@ internal static class L2TestSetup
 
     private static bool RestoreFixtureSolution()
     {
-        var psi = new ProcessStartInfo("dotnet", "restore")
+        // Name the .sln explicitly: the fixture directory holds both SampleSolution.sln and SampleSolution.slnx
+        // (so the .slnx parser can be tested against a known-equivalent .sln), and a bare `dotnet restore` in a
+        // directory with two solution files fails with MSB1011 rather than picking one.
+        var psi = new ProcessStartInfo("dotnet", $"restore \"{TestPaths.FixtureSolution}\"")
         {
             WorkingDirectory = Path.GetDirectoryName(TestPaths.FixtureSolution),
             RedirectStandardOutput = true,

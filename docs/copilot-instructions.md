@@ -2,9 +2,26 @@
 
 <!-- Đặt file này tại .github/copilot-instructions.md để agent tự đọc mỗi session -->
 
+## ⚙️ Cấu hình — sửa 3 dòng này trước khi dùng
+
+Đây là chỗ **duy nhất** trong file khai báo đường dẫn. Người cài file này điền một lần cho
+đúng máy/repo của mình, phần còn lại của tài liệu chỉ tham chiếu lại tên biến.
+
+```
+INDEX_DIR  = .codemap/index          # thư mục chứa symbols.jsonl (tham số --index)
+MAP_FILE   = .codemap/MAP.md         # bản đồ tổng quan
+REPORT_DIR = .codemap/reports        # nơi ghi output dài của slice / impact --full
+```
+
+> **Với AI:** trước khi in lệnh đầu tiên, hãy **kiểm tra `INDEX_DIR` có tồn tại thật không**
+> (liệt kê thư mục, tìm `symbols.jsonl`). Nếu không thấy, **đừng đoán đường dẫn khác và đừng
+> tự bịa** — hỏi thẳng tôi index nằm đâu, hoặc nói tôi chưa chạy `codemap scan`. Đường dẫn ở
+> trên là mặc định gợi ý, không phải sự thật hiển nhiên: mỗi máy đặt một kiểu (có nơi để
+> ngoài repo hẳn, ví dụ `D:\CodeMapIndex\<tên-repo>\index`).
+
 ## Bối cảnh
 
-Repo này có một index tĩnh do tool `codemap` sinh ra, nằm trong `.ai/`. Index được quét lại
+Repo này có một index tĩnh do tool `codemap` sinh ra, nằm ở `INDEX_DIR`. Index được quét lại
 một lần mỗi ngày. Nó trả lời câu hỏi "code nằm đâu và nối với cái gì" nhanh và đầy đủ hơn
 grep rất nhiều.
 
@@ -33,7 +50,7 @@ In đúng một lệnh trong code block, kèm một dòng nói lệnh đó trả
 
 > Tôi cần biết `OrderService.Cancel` được gọi từ đâu. Chạy giúp:
 > ```
-> codemap impact --index .ai/index --symbol "M:Orders.OrderService.Cancel(System.Int32)"
+> codemap impact --index <INDEX_DIR> --symbol "M:Orders.OrderService.Cancel(System.Int32)"
 > ```
 
 Không in nhiều lệnh cùng lúc. Không viết "sau đó chạy tiếp...". Mỗi lượt một lệnh.
@@ -42,12 +59,12 @@ Không in nhiều lệnh cùng lúc. Không viết "sau đó chạy tiếp...". 
 
 | Cần gì | Lệnh |
 |---|---|
-| Tìm symbol theo tên (đã biết tên tiếng Anh) | `codemap find --index .ai/index --query "OrderService.Cancel"` |
-| Tìm symbol theo mô tả nghiệp vụ tiếng Nhật | `codemap where --index .ai/index --query "注文のキャンセル"` |
-| Ảnh hưởng, bản gọn | `codemap impact --index .ai/index --symbol "<docId>"` |
-| Ảnh hưởng, đủ caller trung gian | `codemap impact --index .ai/index --symbol "<docId>" --full` |
-| Ảnh hưởng + code thật + lịch sử ticket | `codemap slice --index .ai/index --symbol "<docId>" --out .ai/reports/current.md` |
-| Bản đồ tổng quan | đọc `.ai/MAP.md` (đã có sẵn, không cần chạy lệnh) |
+| Tìm symbol theo tên (đã biết tên tiếng Anh) | `codemap find --index <INDEX_DIR> --query "OrderService.Cancel"` |
+| Tìm symbol theo mô tả nghiệp vụ tiếng Nhật | `codemap where --index <INDEX_DIR> --query "注文のキャンセル"` |
+| Ảnh hưởng, bản gọn | `codemap impact --index <INDEX_DIR> --symbol "<docId>"` |
+| Ảnh hưởng, đủ caller trung gian | `codemap impact --index <INDEX_DIR> --symbol "<docId>" --full` |
+| Ảnh hưởng + code thật + lịch sử ticket | `codemap slice --index <INDEX_DIR> --symbol "<docId>" --out <REPORT_DIR>/current.md` |
+| Bản đồ tổng quan | đọc `<MAP_FILE>` (đã có sẵn, không cần chạy lệnh) |
 
 Output dài (`slice`, `impact --full` trên symbol lớn) thì luôn dùng `--out` rồi tôi sẽ
 `#file` cho bạn, vì terminal bị cắt bớt.

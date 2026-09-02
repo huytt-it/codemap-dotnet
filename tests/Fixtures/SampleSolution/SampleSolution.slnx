@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/core/">
+    <Project Path="Orders.Core/Orders.Core.csproj" />
+  </Folder>
+  <Project Path="Orders.Data/Orders.Data.csproj" />
+</Solution>

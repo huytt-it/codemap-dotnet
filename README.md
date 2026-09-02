@@ -14,16 +14,17 @@ Tool CLI quét codebase .NET và sinh ra file tĩnh (`.md`, `.jsonl`) để **đ
 
 | Thứ | Bắt buộc? | Dùng để làm gì |
 |---|---|---|
-| **.NET 8 SDK** | ✅ Bắt buộc | Build và chạy tool |
+| **.NET SDK 8, 9 hoặc 10** | ✅ Bắt buộc | Build và chạy tool — **một bản bất kỳ trong ba là đủ**, không cần đúng .NET 8 |
 | **git** | ✅ Bắt buộc | Clone repo này, và lấy lịch sử ticket/cảnh báo index cũ khi dùng tool |
 | **node + npm** | Chỉ khi quét frontend | Đọc lời gọi API trong file Angular/TypeScript |
 
 Kiểm tra nhanh:
 
 ```bash
-dotnet --version
-git --version
+dotnet --list-sdks
 ```
+
+> Tool build ở `net8.0` nhưng bật `RollForward=Major`, nên **chạy được trên runtime 8, 9 hoặc 10**. Bạn không cần cài thêm .NET 8 chỉ để dùng nó. Codebase **đích** mà bạn đem đi quét cũng vậy — `net8.0`, `net9.0`, `net10.0` đều quét được (đã kiểm chứng thật).
 
 ### Lấy source code
 
@@ -32,41 +33,53 @@ git clone https://github.com/huytt-it/codemap-dotnet.git
 cd codemap-dotnet
 ```
 
-Từ đây, `<đường-dẫn-repo>` trong tài liệu này nghĩa là thư mục bạn vừa clone vào (đường dẫn đầy đủ, ví dụ `D:\Work\codemap-dotnet` — máy mỗi người mỗi khác, đừng copy nguyên văn ví dụ).
+### Cài đặt — chọn 1 trong 2 cách
 
-### Build tool
+#### Cách A (khuyến nghị): cài thành lệnh `codemap` thật
+
+Không cần quyền admin, không sửa PowerShell profile, không tạo alias. Chạy 2 lệnh trong thư mục vừa clone:
+
+```bash
+dotnet pack CodeMap.Cli -c Release
+```
+
+```bash
+dotnet tool install --global --add-source ./nupkg CodeMap.Cli
+```
+
+Xong. Mở terminal mới rồi gõ `codemap` ở bất cứ đâu. Tool được cài vào thư mục người dùng (`~/.dotnet/tools`), không đụng gì tới hệ thống.
+
+Sau này pull code mới về thì cập nhật bằng:
+
+```bash
+dotnet pack CodeMap.Cli -c Release; dotnet tool update --global --add-source ./nupkg CodeMap.Cli
+```
+
+> **Nếu gõ `codemap` báo "command not found"**: thư mục `~/.dotnet/tools` chưa nằm trong PATH (hiếm, thường bộ cài .NET SDK tự thêm). Gọi đầy đủ `"$HOME/.dotnet/tools/codemap"` cũng chạy y hệt.
+
+#### Cách B: không cài gì, gọi thẳng file dll
+
+Dùng khi chính sách máy chặn cả `dotnet tool install`:
 
 ```bash
 dotnet build CodeMap.Cli -c Release
 ```
 
-Xong. File chạy nằm ở `CodeMap.Cli\bin\Release\net8.0\CodeMap.Cli.dll` (tính từ `<đường-dẫn-repo>`).
+Sau đó thay mọi chữ `codemap` trong tài liệu này bằng `dotnet "<đường-dẫn-repo>\CodeMap.Cli\bin\Release\net8.0\CodeMap.Cli.dll"`, trong đó `<đường-dẫn-repo>` là thư mục bạn vừa clone.
 
-### Kiểm tra build đúng (khuyến khích cho máy mới)
+### Kiểm tra cài đúng (khuyến khích cho máy mới)
 
 ```bash
 dotnet test tests/CodeMap.Tests
 ```
 
-Toàn bộ test phải pass. Nếu đỏ ngay từ máy mới clone, khả năng cao là thiếu .NET 8 SDK hoặc phiên bản SDK không khớp — kiểm tra lại `dotnet --version` trước khi báo lỗi.
-
-### Đặt lệnh tắt cho gọn (khuyến khích)
-
-Gõ `dotnet <đường-dẫn-repo>\CodeMap.Cli\bin\Release\net8.0\CodeMap.Cli.dll` mỗi lần rất dài. Tạo alias trong PowerShell profile:
-
-```bash
-notepad $PROFILE
-```
-
-Thêm dòng này vào file vừa mở — **thay `<đường-dẫn-repo>` bằng đường dẫn thật trên máy bạn** — rồi lưu và mở lại terminal:
-
-```powershell
-function codemap { dotnet "<đường-dẫn-repo>\CodeMap.Cli\bin\Release\net8.0\CodeMap.Cli.dll" @args }
-```
-
-Từ đây tài liệu này viết `codemap <lệnh>` cho ngắn. Nếu bạn không tạo alias, thay `codemap` bằng `dotnet "<đường-dẫn-repo>\CodeMap.Cli\bin\Release\net8.0\CodeMap.Cli.dll"`.
+Toàn bộ test phải pass. Nếu đỏ ngay từ máy mới clone, kiểm tra `dotnet --list-sdks` trước khi báo lỗi.
 
 Đổi máy khác (hoặc đồng nghiệp clone lại) thì làm lại từ đầu Phần 1 — không có bước nào phụ thuộc vào máy cũ.
+
+### Lười đọc? Bảo AI setup hộ
+
+Nếu bạn dùng Copilot / Claude Code / Cursor, mở [docs/SETUP-PROMPT.md](docs/SETUP-PROMPT.md), copy nguyên khối prompt trong đó dán vào chat AI — nó sẽ tự dò SDK, chọn cách cài phù hợp với quyền hạn máy bạn, quét repo và tự điền đường dẫn vào file hướng dẫn cho AI.
 
 ---
 
@@ -86,7 +99,11 @@ cd D:\Repos\MyApp
 codemap scan --solution MyApp.sln --out D:\CodeMapIndex\MyApp
 ```
 
+`--solution` nhận **cả `.sln` lẫn `.slnx`** (định dạng XML mà .NET 10 SDK sinh ra mặc định).
+
 > **Nếu bước này lỗi:** thử `dotnet restore` trong repo trước. Vẫn lỗi thì thêm `--syntax-only` — quét ở mức nông hơn, không cần solution build được, nhưng kết quả kém chi tiết hơn.
+>
+> Nếu repo có **cả `.sln` lẫn `.slnx`** (thường gặp khi đang chuyển đổi format), `dotnet restore` trần sẽ báo lỗi MSB1011 vì không biết chọn file nào — chỉ định rõ: `dotnet restore MyApp.sln`.
 
 ### Bước 2 — Quét lịch sử git (nên làm)
 
@@ -222,5 +239,6 @@ Tạo file `codemap.config.json` ở **gốc repo** nếu cần. Không có file
 
 ## Tài liệu thêm
 
+- [docs/SETUP-PROMPT.md](docs/SETUP-PROMPT.md) — prompt copy-paste để AI tự cài đặt và cấu hình thay bạn
 - [docs/FEATURES.md](docs/FEATURES.md) — tool làm được gì, **không** làm được gì (nên đọc trước khi tin kết quả)
 - `docs/CODEMAP-SPEC.md`, `docs/OPS-NIGHTLY-SCAN.md`, `docs/TEST-REPORT-PHASE*.md` — tài liệu nội bộ (spec thiết kế, vận hành quét đêm, báo cáo test từng giai đoạn). **Không có trong repo public** — chỉ tồn tại trong bản làm việc gốc, chưa được đẩy lên git.

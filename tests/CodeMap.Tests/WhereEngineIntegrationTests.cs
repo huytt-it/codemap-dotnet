@@ -122,7 +122,9 @@ public class WhereEngineIntegrationTests
 
     private static void RestoreSolution(string repoDir)
     {
-        var psi = new System.Diagnostics.ProcessStartInfo("dotnet", "restore")
+        // Name the .sln explicitly — the copied fixture carries both SampleSolution.sln and SampleSolution.slnx,
+        // and a bare `dotnet restore` in a directory with two solution files fails with MSB1011.
+        var psi = new System.Diagnostics.ProcessStartInfo("dotnet", "restore \"SampleSolution.sln\"")
         {
             WorkingDirectory = repoDir,
             RedirectStandardOutput = true,

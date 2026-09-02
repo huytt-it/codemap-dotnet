@@ -5,6 +5,8 @@ internal static class TestPaths
 {
     public static string RepoRoot { get; } = FindRepoRoot();
     public static string FixtureSolution { get; } = Path.Combine(RepoRoot, "tests", "Fixtures", "SampleSolution", "SampleSolution.sln");
+    /// <summary>The same two projects as FixtureSolution, in the .slnx format the .NET 10 SDK emits by default — one of them inside a solution folder, so parsing has to recurse.</summary>
+    public static string FixtureSolutionSlnx { get; } = Path.Combine(RepoRoot, "tests", "Fixtures", "SampleSolution", "SampleSolution.slnx");
     public static string FixtureFrontend { get; } = Path.Combine(RepoRoot, "tests", "Fixtures", "SampleFrontend");
     public static string FixtureFrontendWithService { get; } = Path.Combine(RepoRoot, "tests", "Fixtures", "SampleFrontendWithService");
 
