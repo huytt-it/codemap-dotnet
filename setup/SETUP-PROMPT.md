@@ -56,18 +56,32 @@ Nếu Cách A bị chính sách máy chặn: ĐỪNG cố sửa PowerShell profi
 `CodeMap.Cli/bin/Release/net8.0/CodeMap.Cli.dll` và từ đây về sau gọi qua `dotnet <đường-dẫn-dll>`.
 Nói rõ cho tôi biết bạn đang dùng cách nào.
 
-## Bước 4 — Khai báo project vào codemap.projects.json
-Hỏi tôi (đừng đoán), cho TỪNG codebase tôi muốn index — tôi có thể có nhiều:
+## Bước 4 — Quyết định phạm vi, rồi khai báo project vào codemap.projects.json
+
+**Hỏi tôi TRƯỚC TIÊN, chỉ 1 câu này, và nhớ câu trả lời cho suốt các bước còn lại (đừng hỏi lại
+ở Bước 7):** tôi định dùng CodeMap cho đúng 1 project này thôi, hay nhiều project và sẽ thêm/bớt
+theo thời gian?
+
+- **Nhiều project / sẽ thêm bớt** → tạo file **thẳng tại `~/.codemap/codemap.projects.json`**
+  (trên Windows là `C:\Users\<tên tôi>\.codemap\codemap.projects.json`). **KHÔNG tạo
+  `setup/codemap.projects.json` bên trong thư mục CodeMap** — nếu để đó, lệnh `codemap` chạy từ
+  bên trong thư mục CodeMap sẽ vô tình ăn nhầm bản này thay vì bản global (`codemap.projects.json`
+  gần cwd hơn luôn được ưu tiên so với bản ở `~/.codemap/`), 2 bản sẽ lệch dần mà không ai biết.
+  Vì đường dẫn giờ nằm ngoài mọi repo, **mọi giá trị `solution`/`output`/`repo`/`frontend` phải
+  là đường dẫn tuyệt đối** (`D:/Repos/...`), không dùng đường dẫn tương đối.
+- **Chỉ 1 project** → đặt ở gốc repo đích cũng được, đơn giản hơn.
+
+Hỏi tôi (đừng đoán), cho TỪNG codebase tôi muốn index:
   1. Đường dẫn repo, và file solution nào (.sln hoặc .slnx — CodeMap đọc được cả hai)
   2. Muốn để index ở đâu. Gợi ý: một thư mục chung ngoài repo, ví dụ `D:/CodeMapIndex/<tên>`.
      Nếu tôi chọn để trong repo, nhớ thêm thư mục đó vào .gitignore của repo đó.
   3. Có frontend Angular/TypeScript riêng không (đường dẫn), nếu có
   4. Team tôi viết commit/ticket bằng ngôn ngữ nào (ja / vi / en / ...)
 
-Rồi tạo file `codemap.projects.json`. Trong thư mục CodeMap đã có sẵn template
-`setup/codemap.projects.example.json` (3 entry mẫu) — copy nó ra thành `setup/codemap.projects.json`
-rồi XOÁ HẾT entry mẫu, điền của tôi. Nếu tôi muốn đặt file ở chỗ khác (gốc repo đích, hay
-`~/.codemap/`) thì hỏi tôi trước. Định dạng:
+Dùng nội dung mẫu trong `setup/codemap.projects.example.json` (3 entry, có ví dụ đủ 3 tình huống:
+có FE riêng / không FE / solution nằm sâu cần chỉ rõ `repo`) làm tham khảo cấu trúc, nhưng **ghi
+thẳng vào vị trí đã chọn ở trên** — đừng copy ra `setup/` trước rồi tính di chuyển sau, dễ quên.
+Định dạng:
 
 {
   "projects": [
@@ -82,7 +96,9 @@ rồi XOÁ HẾT entry mẫu, điền của tôi. Nếu tôi muốn đặt file 
   ]
 }
 
-Xong thì chạy `codemap projects` để tôi xem lại đường dẫn đã resolve đúng chưa.
+Xong thì chạy `codemap projects` để tôi xem lại đường dẫn đã resolve đúng chưa, và dòng đầu tiên
+của output ("Registry: ...") có trỏ đúng vào file bạn vừa tạo không — nếu trỏ vào chỗ khác thì có
+một bản `codemap.projects.json` khác đang che khuất, phải tìm và xoá nó.
 
 ## Bước 5 — Quét
   codemap sync --project <tên>      (hoặc `codemap sync --all` nếu khai báo nhiều project)
@@ -106,7 +122,7 @@ Hỏi tôi: muốn agent (bạn) tự chạy các lệnh `codemap` chỉ-đọc 
 lệnh, tôi tự chạy, tự dán output"?
 
 Nếu tôi đồng ý cho tự chạy: copy `setup/codemap.permissions.json` từ thư mục CodeMap ra CÙNG chỗ
-với `codemap.projects.json` (không phải trong `.github/`). Giữ nguyên default trong đó
+với `codemap.projects.json` đã tạo ở Bước 4 (không phải trong `.github/`). Giữ nguyên default trong đó
 (`find`/`where`/`impact`/`slice`/`projects` = true; `scan`/`sync`/`map`/`link` = false) trừ khi
 tôi nói rõ muốn đổi khác. KHÔNG tự ý đổi `autoRun` của lệnh nào tôi không nhắc tới.
 
@@ -114,14 +130,34 @@ Nếu tôi không muốn: bỏ qua bước này, không tạo file. Mặc địn
 đều phải hỏi trước — an toàn.
 
 ## Bước 7 — Cấu hình cho AI agent
-Copy `setup/copilot-instructions.md` từ thư mục CodeMap sang repo TÔI ĐANG QUÉT, đặt tại
-`.github/copilot-instructions.md` (tạo thư mục `.github` nếu chưa có).
+**Dùng lại đúng câu trả lời "1 project hay nhiều project" đã hỏi ở Bước 4 — đừng hỏi lại.**
+
+- **Nhiều project / sẽ thêm bớt** (Bước 4 đã đặt registry ở `~/.codemap/`) → đặt
+  `setup/codemap.instructions.md` ở vị trí user-level tương ứng, áp dụng cho MỌI workspace trên
+  máy tôi, không cần lặp lại bước này khi thêm project mới:
+    mkdir -p ~/.copilot/instructions
+    cp setup/codemap.instructions.md ~/.copilot/instructions/codemap.instructions.md
+  (Trên Windows, `~` là `C:\Users\<tên tôi>\`.)
+
+- **Chỉ 1 project** (Bước 4 đã đặt registry ở gốc repo đích) → đặt instructions theo repo, cùng
+  tinh thần với registry:
+    mkdir -p <đường-dẫn-repo-đích>/.github/instructions
+    cp setup/codemap.instructions.md <đường-dẫn-repo-đích>/.github/instructions/codemap.instructions.md
+  Lưu ý cách này chỉ có tác dụng khi workspace root đúng là repo đó.
+
+Nếu registry đặt ở `~/.codemap/` (nhiều project) mà instructions lại đặt theo repo (`.github/instructions/`),
+hoặc ngược lại, thì 2 nơi sẽ không khớp phạm vi nhau — luôn dùng CÙNG MỘT lựa chọn cho cả hai.
+
+**Tuyệt đối không đặt tên file là `copilot-instructions.md`** — đó là tên dành riêng cho 1 file
+duy nhất ở gốc mỗi repo theo quy ước GitHub Copilot, nếu tôi đã có file đó cho mục đích khác thì
+copy đè vào sẽ mất nội dung cũ. Giữ nguyên tên `codemap.instructions.md`.
 
 File đó đã tự đọc `codemap.projects.json` và `codemap.permissions.json` nên KHÔNG cần điền
 đường dẫn tay. Nhưng phải kiểm 2 điều:
 - Agent có tìm thấy `codemap.projects.json` (và `codemap.permissions.json` nếu có ở Bước 6) từ
-  trong repo đó không (tool tìm ngược lên thư mục cha, và cả `~/.codemap/`). Nếu không, bảo tôi
-  chuyển file config tới chỗ tìm được.
+  vị trí vừa chọn ở trên không (tool tìm ngược lên thư mục cha, và cả `~/.codemap/`). Nếu chọn
+  cách user-level ở trên, đặt `codemap.projects.json`/`codemap.permissions.json` ở `~/.codemap/`
+  cũng là hợp lý nhất — cùng tinh thần "1 chỗ cho mọi project". Không tìm thấy thì hỏi tôi.
 - Phần "Ngôn ngữ" trong file đang viết sẵn cho codebase commit tiếng Nhật. Nếu `commitLanguage`
   của tôi khác, sửa lại cho khớp — đừng để nguyên nếu không đúng.
 
@@ -131,9 +167,15 @@ Chạy thử một truy vấn thật rồi cho tôi xem output:
 Lấy một docId `M:...` từ kết quả rồi chạy:
   codemap impact --project <tên> --symbol "<docId>"
 
+Nếu tôi chọn "nhiều project" ở Bước 4, chạy thêm `codemap projects` từ MỘT thư mục khác hẳn
+(ví dụ từ chính thư mục repo đích, không phải từ thư mục CodeMap) — dòng "Registry: ..." đầu
+output phải trỏ đúng vào `~/.codemap/codemap.projects.json`. Nếu trỏ vào chỗ khác, nghĩa là còn
+sót một bản `codemap.projects.json` cũ nằm gần cwd hơn — tìm và xoá nó (`find` tên file này trên
+các thư mục tôi đã làm việc cùng trong session này), rồi chạy lại để xác nhận.
+
 Cuối cùng tổng kết ngắn gọn cho tôi:
 - Đang dùng cách cài nào (A hay B), gõ lệnh gì để dùng hằng ngày
-- File codemap.projects.json nằm ở đâu, khai báo mấy project
+- Tôi chọn "1 project" hay "nhiều project" ở Bước 4, registry + instructions đang đặt ở đâu
 - Có bật quyền tự chạy lệnh không (Bước 6), nếu có thì lệnh nào
 - Cần chạy lại lệnh nào khi code đổi nhiều (`codemap sync --project ...`)
 - Bước nào đã bỏ qua và vì sao (không có FE, không có ticket...)
@@ -149,3 +191,7 @@ Cuối cùng tổng kết ngắn gọn cho tôi:
   chặn. Nếu `dotnet tool install` cũng bị chặn thì Cách B (gọi thẳng dll) luôn chạy được.
 - Quét **nhiều repo**: thêm nhiều entry vào mảng `projects` của cùng một `codemap.projects.json`, rồi `codemap sync --all`. CodeMap chỉ cài một lần.
 - Index không tự cập nhật. Xem [README, Phần 4](../README.md) để biết khi nào cần quét lại.
+- Bước 4 và Bước 7 cố tình bắt AI hỏi phạm vi (1 hay nhiều project) **đúng 1 lần** rồi dùng lại,
+  thay vì hỏi riêng từng bước — làm vậy để tránh registry đặt ở `~/.codemap/` (nhiều project) mà
+  instructions lại đặt theo repo (`.github/instructions/`), 2 nơi không khớp nhau. Nếu AI hỏi lại
+  câu này lần 2, đó là dấu hiệu nó không đọc kỹ prompt — nhắc nó dùng lại câu trả lời cũ.

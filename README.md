@@ -329,7 +329,9 @@ Tạo ở **gốc repo bị quét** nếu cần. Không có file này thì tool 
 
 ## Cho AI agent đọc (GitHub Copilot, Claude...)
 
-[setup/copilot-instructions.md](setup/copilot-instructions.md) là bản hướng dẫn đầy đủ cho AI: quy trình hỏi-đáp, cách đọc report, ngôn ngữ nào dùng cho `where`, các điều cấm. Copy file này vào `.github/copilot-instructions.md` **trong repo bạn đang quét** (không phải repo `codemap-dotnet` này) để agent tự đọc mỗi session. Nó không chứa đường dẫn cứng — tự đọc `codemap.projects.json` để biết index nằm đâu.
+[setup/codemap.instructions.md](setup/codemap.instructions.md) là bản hướng dẫn đầy đủ cho AI: quy trình hỏi-đáp, cách đọc report, ngôn ngữ nào dùng cho `where`, các điều cấm. Nó không chứa đường dẫn cứng — tự đọc `codemap.projects.json` để biết index nằm đâu.
+
+Đặt file này ở **`~/.copilot/instructions/`** (áp dụng cho mọi project trên máy bạn, tốt nhất nếu quét nhiều repo và thêm/bớt theo thời gian) hoặc **`<repo đích>/.github/instructions/`** (theo từng repo, chia sẻ được qua git) — cả hai đều VS Code tự đọc, không cần chỉnh setting. Chi tiết và lý do chọn cách nào ở "Việc 4" trong [setup/README.md](setup/README.md).
 
 Mặc định agent **không tự chạy `codemap`** — nó in lệnh, bạn tự chạy tay. Muốn cho agent tự chạy các lệnh chỉ-đọc (`find`/`where`/`impact`/`slice`), cấu hình [setup/codemap.permissions.json](setup/codemap.permissions.json) — xem "Việc 3" trong [setup/README.md](setup/README.md).
 

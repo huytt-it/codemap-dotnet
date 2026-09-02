@@ -1,6 +1,30 @@
+---
+applyTo: "**"
+description: "CodeMap — cách dùng chỉ số codebase tĩnh (offline) khi trả lời câu hỏi quan hệ code"
+---
+
 # Hướng dẫn cho AI agent — CodeMap
 
-<!-- Đặt file này tại .github/copilot-instructions.md để agent tự đọc mỗi session -->
+<!--
+  Đặt file này ở MỘT trong hai chỗ (chọn 1, xem setup/README.md mục "Cho AI đọc được"):
+
+  A. ~/.copilot/instructions/codemap.instructions.md
+     User-level, bật sẵn mặc định trong VS Code (chat.instructionsFilesLocations). Tự áp dụng
+     cho MỌI workspace bạn mở trên máy này — không cần copy vào từng repo, không phụ thuộc
+     project nào đang mở làm workspace root. Đúng lựa chọn nếu bạn quét nhiều project và
+     thêm/bớt project theo thời gian. Nhược điểm: chỉ có tác dụng trên máy này, không chia sẻ
+     qua git cho đồng nghiệp.
+
+  B. <repo đích>/.github/instructions/codemap.instructions.md
+     Theo repo, commit vào git — đồng nghiệp clone về là có luôn, không cần setup riêng. Cũng
+     tự động (không cần setting gì thêm), nhưng chỉ áp dụng khi workspace root là chính repo đó
+     (hoặc repo đó là 1 trong các folder gốc của multi-root workspace).
+
+  Tên file cố ý không phải "copilot-instructions.md" — tên đó dành riêng cho 1 file duy nhất ở
+  gốc workspace theo quy ước GitHub Copilot, dễ đụng với hướng dẫn khác của team. Đuôi
+  ".instructions.md" là quy ước path-specific instructions của VS Code, nhiều file cùng tồn tại
+  song song, không giới hạn tên.
+-->
 
 ## ⚙️ Đường dẫn index — đọc từ `codemap.projects.json`, đừng đoán
 
@@ -30,6 +54,11 @@ Cách dùng những gì đọc được:
 - **`description`** cho bạn biết codebase đó là gì. Repo nào cũng có thể có nhiều entry.
 - **`commitLanguage`** là ngôn ngữ team viết commit/ticket. **Quyết định trực tiếp** ngôn ngữ
   bạn nên dùng cho `where` — xem mục "Ngôn ngữ" bên dưới.
+
+> **File này đang áp dụng cho nhiều project khác nhau (đặt ở `~/.copilot/instructions/`
+> — xem đầu file).** Không có nghĩa mọi project đều dùng CodeMap. Nếu workspace hiện tại
+> không khớp `name`/`solution` nào trong `codemap.projects.json`, coi như CodeMap chưa setup
+> cho project này — đừng cố ép dùng, và đừng lấy nhầm số liệu của project khác.
 
 > **Nếu không tìm thấy `codemap.projects.json`:** hỏi tôi index nằm đâu, rồi dùng
 > `--index <đường dẫn>`. **Không tự bịa đường dẫn, không giả định `.ai/` hay `.codemap/`** —
@@ -70,14 +99,21 @@ kết quả.
 **Không tự nới `autoRun` lên `true` cho lệnh đang ghi `false`.** Đó là lựa chọn của tôi, không
 phải của bạn — kể cả khi bạn thấy tiện hơn.
 
+**Quan trọng nhất trong toàn bộ file này:** khi câu hỏi cần dữ liệu quan hệ (impact, caller, entry
+point...), **luôn mở terminal và chạy lệnh `codemap` thật** — dù `autoRun` cho phép bạn tự chạy
+hay phải in lệnh chờ tôi. **Không được** tự ý dùng công cụ tìm kiếm/đọc file có sẵn của bạn để
+thay thế, kể cả khi việc đó có vẻ nhanh hơn hoặc không cần xin phép. Danh sách "Cấm" ở cuối file
+nói rõ vì sao (grep mù ra kết quả sai lệch, chậm hơn, và bỏ lỡ cạnh suy diễn `codemap` đã tính
+sẵn).
+
 ## Quy trình làm việc
 
 1. Tôi hỏi một câu về codebase.
 2. Nếu câu hỏi cần dữ liệu quan hệ (ai gọi ai, sửa chỗ này ảnh hưởng đâu, chức năng này nằm
    đâu) → xem lệnh cần dùng có `autoRun: true` không (mục permission ở trên).
-   - Có → tự chạy, đọc output.
+   - Có → **mở terminal, tự chạy lệnh `codemap` thật**, đọc output.
    - Không → in ra **đúng một lệnh** cho tôi chạy, rồi **dừng lại**.
-   Cả hai trường hợp: không đoán trước kết quả, không grep thay thế.
+   Cả hai trường hợp: không đoán trước kết quả, không tự search/grep thay thế.
 3. Lệnh `autoRun: false` thì tôi chạy tay, dán output hoặc để bạn đọc terminal.
 4. Bạn đọc kết quả, **rồi mới đọc source thật** ở những file report chỉ ra, và trả lời.
 
@@ -86,8 +122,8 @@ là "tại sao" hoặc "sửa thế nào".
 
 ## Khi bạn cần thêm dữ liệu
 
-**Lệnh `autoRun: true`:** chạy luôn, không cần xin phép, rồi tiếp tục trả lời. Vẫn nói rõ bạn
-vừa chạy lệnh gì (tôi cần thấy, không phải để xin phép).
+**Lệnh `autoRun: true`:** mở terminal, chạy lệnh `codemap` thật ngay, không cần xin phép, rồi
+tiếp tục trả lời. Vẫn nói rõ bạn vừa chạy lệnh gì (tôi cần thấy, không phải để xin phép).
 
 **Lệnh `autoRun: false`:** in đúng một lệnh trong code block, kèm một dòng nói lệnh đó trả lời
 được gì, rồi dừng. Ví dụ:
@@ -225,6 +261,9 @@ lặng coi như repo không có lịch sử.
 
 ## Cấm
 
+- **Không tự ý dùng công cụ search/read-file có sẵn của bạn thay cho lệnh `codemap`** khi câu
+  hỏi cần dữ liệu quan hệ, kể cả khi bạn đã đọc `codemap.projects.json` và biết index tồn tại.
+  Biết index tồn tại mà không dùng nó thì cũng vô nghĩa như không có index.
 - Không grep mù **cho câu hỏi quan hệ**. Grep `Save` trong monolith trả về hàng nghìn kết quả
   vô dụng; `impact` trả lời trực tiếp. (Grep vẫn đúng cho comment và string literal — xem mục
   "Index không lưu comment".)
