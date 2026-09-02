@@ -1,10 +1,11 @@
 # setup/ — mọi thứ cần điền, gom một chỗ
 
-Ba file trong thư mục này là toàn bộ phần "cấu hình" của CodeMap. Clone repo về, làm đúng 3 việc dưới đây là dùng được.
+Các file trong thư mục này là toàn bộ phần "cấu hình" của CodeMap. Clone repo về, làm đúng 4 việc dưới đây là dùng được.
 
 | File | Làm gì với nó |
 |---|---|
 | `codemap.projects.example.json` | **Copy thành `codemap.projects.json` rồi điền** — khai báo repo nào cần quét, index để đâu |
+| `codemap.permissions.json` | Sửa trực tiếp — lệnh `codemap` nào AI được **tự chạy**, lệnh nào phải hỏi bạn trước |
 | `SETUP-PROMPT.md` | Copy khối prompt dán vào AI để nó cài đặt thay bạn (tuỳ chọn) |
 | `copilot-instructions.md` | **Copy sang repo bạn quét**, đặt tại `.github/copilot-instructions.md` |
 
@@ -48,7 +49,43 @@ codemap sync --config setup/codemap.projects.json --all
 
 Chạy trọn `scan` → `scan-git` → `scan-fe` → `link` → `map` cho mọi project đã khai báo. Quét một project thôi thì `--project <tên>` thay cho `--all`.
 
-## Việc 3 — Cho AI đọc được
+## Việc 3 — Quyết định AI được tự chạy lệnh nào
+
+Mặc định, AI **không tự chạy `codemap`** — nó in lệnh ra, bạn dán vào terminal, rồi dán output ngược lại cho nó đọc. An toàn nhưng chậm.
+
+Mở `setup/codemap.permissions.json`, đổi `"autoRun"` cho từng lệnh con:
+
+```json
+"where": { "autoRun": true, "reason": "chỉ đọc index" }
+```
+
+Mặc định sẵn: `find` / `where` / `impact` / `slice` / `projects` (chỉ đọc, không side effect ngoài ghi 1 file report nếu có `--out`) là `true`; `scan` / `scan-fe` / `scan-git` / `sync` / `map` / `link` (ghi lại index, có thể chậm) là `false`. Đổi tuỳ ý — không có gì bắt buộc phải giữ nguyên.
+
+> AI tìm file này **cùng chỗ với `codemap.projects.json`** (root repo đích / thư mục cha / `~/.codemap/`) — không phải trong `.github/`. Đặt `codemap.projects.json` ở đâu (Việc 1) thì đặt `codemap.permissions.json` ở đúng đó, đừng để 2 nơi khác nhau.
+
+**Đây là quy ước mềm** — AI tuân theo vì `copilot-instructions.md` bảo nó đọc và làm theo, giống mọi quy tắc khác trong file đó (cách đọc "Blind spots", cách viết symbol...). Không phải cơ chế chặn của hệ điều hành, và không phân biệt AI/công cụ nào đang đọc.
+
+### Chặn cứng (tuỳ chọn, riêng cho Claude Code)
+
+Muốn chặn thật — agent không thể lách kể cả khi "quên" đọc file — thêm vào `.claude/settings.json` (hoặc `.claude/settings.local.json`) của repo đích:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(codemap find:*)",
+      "Bash(codemap where:*)",
+      "Bash(codemap impact:*)",
+      "Bash(codemap slice:*)",
+      "Bash(codemap projects:*)"
+    ]
+  }
+}
+```
+
+Đây là cơ chế permission gốc của Claude Code — chạy đúng những lệnh được liệt kê mà không hỏi lại, mọi lệnh khác vẫn phải xác nhận. Copilot Chat / Cursor có cơ chế tương tự riêng (thường gọi là "auto-approve" cho terminal), tên setting khác nhau tuỳ phiên bản — xem tài liệu của công cụ đó nếu muốn chặn cứng thay vì chỉ dựa vào `codemap.permissions.json`.
+
+## Việc 4 — Cho AI đọc được
 
 Copy `copilot-instructions.md` sang **repo bạn đang quét** (không phải repo CodeMap này):
 
@@ -56,10 +93,11 @@ Copy `copilot-instructions.md` sang **repo bạn đang quét** (không phải re
 cp setup/copilot-instructions.md <đường-dẫn-repo-đích>/.github/copilot-instructions.md
 ```
 
-File này AI tự đọc mỗi session. Nó **không chứa đường dẫn cứng** — nó tự đọc `codemap.projects.json` để biết index nằm đâu. Hai chỗ nên xem lại sau khi copy:
+File này AI tự đọc mỗi session. Nó **không chứa đường dẫn cứng** — nó tự đọc `codemap.projects.json` để biết index nằm đâu, và `codemap.permissions.json` để biết lệnh nào tự chạy được. Ba chỗ nên xem lại sau khi copy:
 
 - Mục **"Ngôn ngữ"** đang viết sẵn cho codebase có commit tiếng Nhật. `commitLanguage` của bạn khác thì sửa lại.
 - Đảm bảo AI **tìm thấy** `codemap.projects.json` từ trong repo đích (theo thứ tự tìm kiếm ở Việc 1). Không thấy thì chuyển file config sang `~/.codemap/`.
+- Nếu bạn không tạo `codemap.permissions.json`, AI mặc định coi mọi lệnh là phải hỏi trước — an toàn, không cần làm gì thêm.
 
 ---
 

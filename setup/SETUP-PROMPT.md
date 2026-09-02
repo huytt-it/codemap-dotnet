@@ -100,17 +100,32 @@ Lưu ý khi chạy:
 Sau khi xong, chạy `codemap projects` để xác nhận trạng thái index, rồi mở `<output>/MAP.md`
 và tóm tắt cho tôi: bao nhiêu project, bao nhiêu entry point, mục Blind Spots nói gì.
 
-## Bước 6 — Cấu hình cho AI agent
+## Bước 6 — Quyền tự chạy lệnh
+Hỏi tôi: muốn agent (bạn) tự chạy các lệnh `codemap` chỉ-đọc (`find`/`where`/`impact`/`slice`/
+`projects`) mà không cần dán tay vào terminal mỗi lần không, hay muốn giữ nguyên kiểu "agent in
+lệnh, tôi tự chạy, tự dán output"?
+
+Nếu tôi đồng ý cho tự chạy: copy `setup/codemap.permissions.json` từ thư mục CodeMap ra CÙNG chỗ
+với `codemap.projects.json` (không phải trong `.github/`). Giữ nguyên default trong đó
+(`find`/`where`/`impact`/`slice`/`projects` = true; `scan`/`sync`/`map`/`link` = false) trừ khi
+tôi nói rõ muốn đổi khác. KHÔNG tự ý đổi `autoRun` của lệnh nào tôi không nhắc tới.
+
+Nếu tôi không muốn: bỏ qua bước này, không tạo file. Mặc định không có file này thì mọi lệnh
+đều phải hỏi trước — an toàn.
+
+## Bước 7 — Cấu hình cho AI agent
 Copy `setup/copilot-instructions.md` từ thư mục CodeMap sang repo TÔI ĐANG QUÉT, đặt tại
 `.github/copilot-instructions.md` (tạo thư mục `.github` nếu chưa có).
 
-File đó đã tự đọc `codemap.projects.json` nên KHÔNG cần điền đường dẫn tay. Nhưng phải kiểm 2 điều:
-- Agent có tìm thấy `codemap.projects.json` từ trong repo đó không (tool tìm ngược lên thư mục
-  cha, và cả `~/.codemap/`). Nếu không, bảo tôi chuyển file config tới chỗ tìm được.
+File đó đã tự đọc `codemap.projects.json` và `codemap.permissions.json` nên KHÔNG cần điền
+đường dẫn tay. Nhưng phải kiểm 2 điều:
+- Agent có tìm thấy `codemap.projects.json` (và `codemap.permissions.json` nếu có ở Bước 6) từ
+  trong repo đó không (tool tìm ngược lên thư mục cha, và cả `~/.codemap/`). Nếu không, bảo tôi
+  chuyển file config tới chỗ tìm được.
 - Phần "Ngôn ngữ" trong file đang viết sẵn cho codebase commit tiếng Nhật. Nếu `commitLanguage`
   của tôi khác, sửa lại cho khớp — đừng để nguyên nếu không đúng.
 
-## Bước 7 — Kiểm chứng end-to-end
+## Bước 8 — Kiểm chứng end-to-end
 Chạy thử một truy vấn thật rồi cho tôi xem output:
   codemap where --project <tên> --query "<mô tả nghiệp vụ, bằng đúng ngôn ngữ team tôi viết commit>"
 Lấy một docId `M:...` từ kết quả rồi chạy:
@@ -119,6 +134,7 @@ Lấy một docId `M:...` từ kết quả rồi chạy:
 Cuối cùng tổng kết ngắn gọn cho tôi:
 - Đang dùng cách cài nào (A hay B), gõ lệnh gì để dùng hằng ngày
 - File codemap.projects.json nằm ở đâu, khai báo mấy project
+- Có bật quyền tự chạy lệnh không (Bước 6), nếu có thì lệnh nào
 - Cần chạy lại lệnh nào khi code đổi nhiều (`codemap sync --project ...`)
 - Bước nào đã bỏ qua và vì sao (không có FE, không có ticket...)
 ```

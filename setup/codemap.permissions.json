@@ -1,0 +1,25 @@
+{
+  "description": "Lệnh codemap nào AI agent được TỰ CHẠY (không cần bạn dán vào terminal). Agent đọc file này qua copilot-instructions.md trước mỗi lần cần gọi codemap. Sửa \"autoRun\" theo ý bạn bất cứ lúc nào — không cần khởi động lại session, agent đọc lại mỗi lần.",
+
+  "note": "File này là quy ước MỀM — agent tuân theo vì được chỉ thị trong copilot-instructions.md, giống mọi quy tắc khác trong file đó. Không phải cơ chế chặn cứng của hệ điều hành. Muốn chặn cứng thật sự (agent không thể lách dù có cố), xem mục 'Chặn cứng' trong setup/README.md.",
+
+  "commands": {
+    "projects": { "autoRun": true,  "reason": "chỉ đọc registry, không ghi gì" },
+    "find":     { "autoRun": true,  "reason": "chỉ đọc index" },
+    "where":    { "autoRun": true,  "reason": "chỉ đọc index" },
+    "impact":   { "autoRun": true,  "reason": "chỉ đọc index; --out chỉ ghi 1 file report, không đụng source" },
+    "slice":    { "autoRun": true,  "reason": "đọc index + đọc source thật từ đĩa (read-only); --out chỉ ghi 1 file report" },
+
+    "map":      { "autoRun": false, "reason": "ghi đè MAP.md — mặc định hỏi trước, đổi thành true nếu bạn không cần xem trước" },
+    "link":     { "autoRun": false, "reason": "ghi lại api-links.json" },
+    "scan":     { "autoRun": false, "reason": "quét lại toàn bộ, có thể chậm trên solution lớn, đổi mốc 'index còn mới hay cũ'" },
+    "scan-fe":  { "autoRun": false, "reason": "như scan" },
+    "scan-git": { "autoRun": false, "reason": "như scan" },
+    "sync":     { "autoRun": false, "reason": "chạy trọn pipeline scan — mặc định hỏi trước" }
+  },
+
+  "always_ask_first": [
+    "Bất kể autoRun là gì, mọi lệnh đều PHẢI dùng --project hoặc --index có thật trong codemap.projects.json — không tự bịa đường dẫn.",
+    "autoRun chỉ áp dụng cho lệnh codemap. Không liên quan gì tới việc agent có được tự sửa/xoá file source hay không — CodeMap luôn chỉ-đọc solution của bạn, nhưng quyền của agent với các file KHÁC (source code, git) vẫn theo permission riêng của công cụ agent đó (Claude Code, Copilot...), không phải file này."
+  ]
+}

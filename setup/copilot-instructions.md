@@ -49,16 +49,36 @@ và message commit/ticket thì theo `commitLanguage` của project trong `codema
 (ví dụ dưới đây viết cho `"ja"` — tiếng Nhật).** Sự lệch ngôn ngữ này quyết định lệnh nào dùng
 được cho câu hỏi nào — xem mục "Ngôn ngữ" bên dưới, đọc trước khi gõ lệnh đầu tiên.
 
-**Bạn không chạy được `codemap`.** Tôi chạy lệnh trong terminal, bạn đọc kết quả. Xem mục
-"Khi bạn cần thêm dữ liệu" bên dưới.
+## 🔑 Bạn CÓ THỂ tự chạy một số lệnh `codemap` — đọc `codemap.permissions.json`
+
+Cùng chỗ với `codemap.projects.json` (tìm ở gốc repo, các thư mục cha, hoặc `~/.codemap/`) có
+thể có file `codemap.permissions.json`, khai báo lệnh con nào bạn được tự chạy
+(`"autoRun": true`) và lệnh nào phải in ra rồi dừng cho tôi chạy tay (`"autoRun": false`).
+
+- **Có file, lệnh đang cần là `autoRun: true`** → tự chạy qua terminal của bạn, đọc thẳng output,
+  rồi làm tiếp bước "đọc source thật" bên dưới. Không cần hỏi tôi trước mỗi lần.
+- **Có file, lệnh đang cần là `autoRun: false`, hoặc không có trong danh sách** → theo quy trình
+  cũ: in đúng một lệnh, dừng lại, đợi tôi chạy.
+- **Không tìm thấy file này** → coi như mọi lệnh đều `autoRun: false` (an toàn hơn) — theo quy
+  trình cũ.
+
+Tự chạy được không có nghĩa là bỏ qua các quy tắc phân tích còn lại trong file này — vẫn phải
+đọc mục "Blind spots", vẫn phải phân biệt cạnh chắc chắn với cạnh suy diễn, vẫn phải đọc source
+thật trước khi trả lời "tại sao". `autoRun` chỉ đổi **ai gõ lệnh**, không đổi cách bạn phải đọc
+kết quả.
+
+**Không tự nới `autoRun` lên `true` cho lệnh đang ghi `false`.** Đó là lựa chọn của tôi, không
+phải của bạn — kể cả khi bạn thấy tiện hơn.
 
 ## Quy trình làm việc
 
 1. Tôi hỏi một câu về codebase.
 2. Nếu câu hỏi cần dữ liệu quan hệ (ai gọi ai, sửa chỗ này ảnh hưởng đâu, chức năng này nằm
-   đâu) → bạn in ra **đúng một lệnh** cho tôi chạy, rồi **dừng lại**. Không đoán trước kết
-   quả, không grep thay thế.
-3. Tôi chạy lệnh, dán output hoặc để bạn đọc terminal.
+   đâu) → xem lệnh cần dùng có `autoRun: true` không (mục permission ở trên).
+   - Có → tự chạy, đọc output.
+   - Không → in ra **đúng một lệnh** cho tôi chạy, rồi **dừng lại**.
+   Cả hai trường hợp: không đoán trước kết quả, không grep thay thế.
+3. Lệnh `autoRun: false` thì tôi chạy tay, dán output hoặc để bạn đọc terminal.
 4. Bạn đọc kết quả, **rồi mới đọc source thật** ở những file report chỉ ra, và trả lời.
 
 Report cho biết **ở đâu**. Source code cho biết **tại sao**. Đừng dừng ở report khi câu hỏi
@@ -66,7 +86,11 @@ là "tại sao" hoặc "sửa thế nào".
 
 ## Khi bạn cần thêm dữ liệu
 
-In đúng một lệnh trong code block, kèm một dòng nói lệnh đó trả lời được gì, rồi dừng. Ví dụ:
+**Lệnh `autoRun: true`:** chạy luôn, không cần xin phép, rồi tiếp tục trả lời. Vẫn nói rõ bạn
+vừa chạy lệnh gì (tôi cần thấy, không phải để xin phép).
+
+**Lệnh `autoRun: false`:** in đúng một lệnh trong code block, kèm một dòng nói lệnh đó trả lời
+được gì, rồi dừng. Ví dụ:
 
 > Tôi cần biết `OrderService.Cancel` được gọi từ đâu. Chạy giúp:
 > ```
@@ -220,8 +244,8 @@ lặng coi như repo không có lịch sử.
 ```
 Ticket #4821: 支払い済みの注文をキャンセルするとエラーになる。
 
-Tìm giúp tôi chỗ nào trong code xử lý việc này. Dùng codemap, in lệnh cho tôi chạy
-từng bước một. Sau khi định vị được, đọc source thật rồi giải thích luồng xử lý.
+Tìm giúp tôi chỗ nào trong code xử lý việc này. Dùng codemap theo đúng quyền autoRun đã
+cấu hình. Sau khi định vị được, đọc source thật rồi giải thích luồng xử lý.
 Nếu lượt tìm đầu không ra kết quả tin được, đề xuất cách viết lại câu truy vấn.
 ```
 
@@ -233,7 +257,7 @@ Tôi định đổi signature của <symbol>. Trước khi làm, cho tôi biết
 - phần nào là chắc chắn, phần nào là tool suy diễn
 - vùng mù nào khiến đánh giá này chưa đầy đủ
 
-In lệnh codemap cần chạy, đừng đoán.
+Dùng codemap theo đúng quyền autoRun đã cấu hình, đừng đoán.
 ```
 
 ## 3. Review hệ quả của một thay đổi đã làm
