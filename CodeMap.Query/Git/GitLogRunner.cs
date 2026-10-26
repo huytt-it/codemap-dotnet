@@ -5,9 +5,15 @@ namespace CodeMap.Query.Git;
 
 /// <summary>
 /// Runs `git log` via Process (spec section 2 dependency policy: no LibGit2Sharp) and parses the output into
-/// commits. Uses a control-character delimiter (\x01) ahead of each commit's header line instead of relying on
-/// blank-line splitting, since blank-line behavior around `--pretty=format:` + a diff format is finicky (no
-/// leading blank before the first commit, one between the rest).
+/// commits. Control characters delimit everything, because blank-line behavior around `--pretty=format:` + a
+/// diff format is finicky (no leading blank before the first commit, one between the rest) and a commit body is
+/// free text that can hold blank lines, tabs, pipes and lines that look exactly like `--name-status` rows.
+/// Each commit is
+///
+///     \x01 hash \x1f date \x1f subject \x1f body \x1e \n name-status rows...
+///
+/// so the body is bracketed on both sides by characters no commit message contains, and the rows can only
+/// start after the closing \x1e.
 ///
 /// Three things this asks git for beyond a plain listing, each measured on the eShopOnWeb history:
 ///
@@ -24,6 +30,8 @@ namespace CodeMap.Query.Git;
 internal static class GitLogRunner
 {
     private const char CommitDelimiter = '\x01';
+    private const char FieldSeparator = '\x1f';
+    private const char HeaderEnd = '\x1e';
 
     private static readonly string[] PreferredArgs =
         { "--first-parent", "--diff-merges=first-parent", "--name-status", "-M" };
@@ -76,7 +84,8 @@ internal static class GitLogRunner
         psi.ArgumentList.Add("core.quotepath=false");
         psi.ArgumentList.Add("log");
         foreach (var a in logArgs) psi.ArgumentList.Add(a);
-        psi.ArgumentList.Add($"--pretty=format:{CommitDelimiter}%H|%ad|%s");
+        // git expands %x01 / %x1f / %x1e itself, so no control character has to survive the command line.
+        psi.ArgumentList.Add("--pretty=format:%x01%H%x1f%ad%x1f%s%x1f%b%x1e");
         psi.ArgumentList.Add("--date=short");
         if (!string.IsNullOrWhiteSpace(since))
             psi.ArgumentList.Add($"--since={since}");
@@ -122,7 +131,7 @@ internal static class GitLogRunner
                 if (change.RenamedFrom != null) currentName[change.RenamedFrom] = name;
             }
 
-            result.Add(new GitCommit(commit.Hash, commit.Date, commit.Message, files));
+            result.Add(new GitCommit(commit.Hash, commit.Date, commit.Message, files, commit.Body));
         }
 
         return result;
@@ -134,18 +143,24 @@ internal static class GitLogRunner
 
         foreach (var block in output.Split(CommitDelimiter, StringSplitOptions.RemoveEmptyEntries))
         {
-            var lines = block.Split('\n')
+            // The header ends at the first \x1e; whatever follows is the diff rows. A block without one is not
+            // one of ours (nothing in a commit message produces \x01).
+            var headerEnd = block.IndexOf(HeaderEnd);
+            if (headerEnd < 0) continue;
+
+            // maxCount 4: the last field is the body, so it takes whatever the separators leave. A '|' in a
+            // subject no longer needs any care — it is not a delimiter.
+            var header = block[..headerEnd].Split(FieldSeparator, 4);
+            if (header.Length < 4) continue;
+
+            var changes = block[(headerEnd + 1)..]
+                .Split('\n')
                 .Select(l => l.TrimEnd('\r'))
                 .Where(l => l.Length > 0)
+                .Select(ParseChange)
+                .OfType<RawChange>()
                 .ToList();
-            if (lines.Count == 0) continue;
-
-            // maxCount 3: a commit subject containing '|' must not get split further.
-            var header = lines[0].Split('|', 3);
-            if (header.Length < 3) continue;
-
-            var changes = lines.Skip(1).Select(ParseChange).OfType<RawChange>().ToList();
-            commits.Add(new RawCommit(header[0], header[1], header[2], changes));
+            commits.Add(new RawCommit(header[0], header[1], header[2], changes, header[3].Trim()));
         }
 
         return commits;
@@ -166,5 +181,5 @@ internal static class GitLogRunner
 
     private sealed record RawChange(string Path, string? RenamedFrom);
 
-    private sealed record RawCommit(string Hash, string Date, string Message, List<RawChange> Changes);
+    private sealed record RawCommit(string Hash, string Date, string Message, List<RawChange> Changes, string Body);
 }

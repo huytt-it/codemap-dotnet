@@ -87,7 +87,7 @@ internal static class ScanGitCommand
         // lists alone, so it is still worth writing, and `sync` runs this step as optional — returning here before
         // co-change would lose it without a word.
         var probe = commits.Take(TicketPatternProbeCommitCount).ToList();
-        var ticketPatternMatchesNothing = !probe.Any(c => ticketPattern.IsMatch(c.Message));
+        var ticketPatternMatchesNothing = !probe.Any(c => TicketExtractor.FindTicketIds(c, ticketPattern).Count > 0);
 
         var indexDir = Path.Combine(outDir, "index");
         Directory.CreateDirectory(indexDir);
