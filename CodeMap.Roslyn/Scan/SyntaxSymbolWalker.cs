@@ -624,14 +624,10 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         if (methodName is not ("Send" or "Publish")) return;
         if (node.ArgumentList.Arguments.Count == 0) return;
 
-        var constructedTypeId = node.ArgumentList.Arguments[0].Expression switch
-        {
-            ObjectCreationExpressionSyntax oce when _model.GetSymbolInfo(oce).Symbol is IMethodSymbol { MethodKind: MethodKind.Constructor } ctor
-                => ctor.ContainingType.OriginalDefinition.GetDocumentationCommentId(),
-            ImplicitObjectCreationExpressionSyntax ioce when _model.GetSymbolInfo(ioce).Symbol is IMethodSymbol { MethodKind: MethodKind.Constructor } ctor
-                => ctor.ContainingType.OriginalDefinition.GetDocumentationCommentId(),
-            _ => null,
-        };
+        var constructedTypeId = node.ArgumentList.Arguments[0].Expression is BaseObjectCreationExpressionSyntax creation &&
+                                BoundMethod(creation) is { MethodKind: MethodKind.Constructor } ctor
+            ? ctor.ContainingType.OriginalDefinition.GetDocumentationCommentId()
+            : null;
         if (constructedTypeId == null) return;
 
         var fromId = CurrentFromId();
@@ -719,8 +715,24 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
 
     private void HandleInvocation(InvocationExpressionSyntax node)
     {
-        if (_model.GetSymbolInfo(node).Symbol is not IMethodSymbol method) return; // unresolved overload/dynamic — don't guess
+        if (BoundMethod(node) is not { } method) return;
         EmitMemberEdge(method, "call", LineOf(node));
+    }
+
+    /// <summary>
+    /// The method a call or `new` binds to. When an argument's type doesn't resolve (at L1: anything built from a
+    /// NuGet type, like `User.Identity.Name` over an unresolved ControllerBase), Roslyn reports an overload
+    /// resolution failure with no Symbol even if the method has one overload and the target is not in doubt; that
+    /// sole candidate is taken. Several candidates would be a guess and stay unbound, as does dynamic.
+    /// </summary>
+    private IMethodSymbol? BoundMethod(ExpressionSyntax node)
+    {
+        var info = _model.GetSymbolInfo(node);
+        var symbol = info.Symbol
+            ?? (info.CandidateReason == CandidateReason.OverloadResolutionFailure && info.CandidateSymbols.Length == 1
+                ? info.CandidateSymbols[0]
+                : null);
+        return symbol as IMethodSymbol;
     }
 
     /// <summary>
@@ -755,7 +767,7 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
 
     private void HandleObjectCreation(BaseObjectCreationExpressionSyntax node)
     {
-        if (_model.GetSymbolInfo(node).Symbol is not IMethodSymbol { MethodKind: MethodKind.Constructor } ctor) return;
+        if (BoundMethod(node) is not { MethodKind: MethodKind.Constructor } ctor) return;
         EmitMemberEdge(ctor, "new", LineOf(node));
     }
 
