@@ -31,7 +31,7 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     private readonly Stack<string> _typeStack = new();
     private readonly Stack<string> _typeIdStack = new();
     private readonly Stack<string> _memberIdStack = new();
-    private readonly Stack<string?> _controllerRouteStack = new();
+    private readonly Stack<ControllerInfo?> _controllerStack = new();
 
     public List<SymbolRecord> Symbols { get; } = new();
     public List<EdgeRecord> DirectEdges { get; } = new();
@@ -110,7 +110,7 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     {
         var id = EmitMemberSymbol(node, "Method", node.AttributeLists);
         if (id != null)
-            TryRecordHttpActionEntryPoint(id, node.AttributeLists);
+            TryRecordHttpActionEntryPoint(id, node);
         WithMember(id, () => base.VisitMethodDeclaration(node));
     }
 
@@ -211,20 +211,20 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
                     HandleBaseType(fromId, baseType.Type);
         }
 
-        string? controllerRoute = null;
+        ControllerInfo? controller = null;
         if (symbol != null && kind is "Class" or "Struct" or "Record")
         {
             RecordInterfaceMappings(symbol);
             TryRecordAttributeDiBinding(symbol);
             if (kind == "Class")
-                controllerRoute = RecordTypeLevelEntryPoint(symbol, attrLists);
+                controller = RecordTypeLevelEntryPoint(symbol, attrLists);
         }
 
         if (symbol != null)
         {
             _typeStack.Push(DisplayName(symbol));
             _typeIdStack.Push(symbol.GetDocumentationCommentId() ?? "");
-            _controllerRouteStack.Push(controllerRoute);
+            _controllerStack.Push(controller);
         }
 
         visitChildren();
@@ -233,7 +233,7 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         {
             _typeStack.Pop();
             _typeIdStack.Pop();
-            _controllerRouteStack.Pop();
+            _controllerStack.Pop();
         }
     }
 
@@ -328,9 +328,9 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     /// resolving the real ASP.NET Core/Hosting/MediatR package symbol — the same pragmatic, name-based approach
     /// already used for base-type resolution elsewhere, and it keeps working even when those packages aren't
     /// fully resolvable (a degraded project, or a project that only references them transitively).
-    /// Returns the controller's composed route prefix (for method-level composition), or null if not a controller.
+    /// Returns what the controller's action methods need to compute their routes, or null if not a controller.
     /// </summary>
-    private string? RecordTypeLevelEntryPoint(INamedTypeSymbol type, SyntaxList<AttributeListSyntax> classAttrLists)
+    private ControllerInfo? RecordTypeLevelEntryPoint(INamedTypeSymbol type, SyntaxList<AttributeListSyntax> classAttrLists)
     {
         if (IsBackgroundServiceType(type))
         {
@@ -357,19 +357,68 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
             }
         }
 
-        if (!IsControllerType(type)) return null;
+        if (ControllerStyleOf(type, classAttrLists) is not { } style) return null;
 
-        var routeTemplate = ExtractRouteTemplate(classAttrLists) ?? "";
-        var controllerName = type.Name.EndsWith("Controller", StringComparison.Ordinal) ? type.Name[..^"Controller".Length] : type.Name;
-        return routeTemplate.Replace("[controller]", controllerName.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase);
+        Template? area = null;
+        Template route = default, routePrefix = default;
+        foreach (var attr in classAttrLists.SelectMany(l => l.Attributes))
+        {
+            switch (SimpleAttributeName(attr))
+            {
+                case "Route" when !route.Declared: route = TemplateOf(attr); break;
+                case "RoutePrefix" when !routePrefix.Declared: routePrefix = TemplateOf(attr); break;
+                case "Area": area = TemplateOf(attr); break;
+            }
+        }
+
+        var name = type.Name.EndsWith("Controller", StringComparison.Ordinal) ? type.Name[..^"Controller".Length] : type.Name;
+        return new ControllerInfo(name, style, route, routePrefix, area?.Value, HasAttribute(classAttrLists, "ApiController"));
     }
 
-    private static bool IsControllerType(INamedTypeSymbol type)
+    private enum ControllerStyle { AspNetCore, AspNetMvc5, WebApi2 }
+
+    /// <summary>What an action method needs from its controller to compute its route.</summary>
+    private sealed record ControllerInfo(
+        string Name, ControllerStyle Style, Template Route, Template RoutePrefix, string? Area, bool RequiresAttributeRouting);
+
+    /// <summary>A routing attribute's template argument. Declared with a null Value = it has one, but it isn't a
+    /// constant this compilation can fold (at L1: a const from a NuGet package) — the route is unknown, which is
+    /// not the same as "no template, inherit the controller's".</summary>
+    private readonly record struct Template(bool Declared, string? Value)
     {
-        for (var t = type.BaseType; t != null; t = t.BaseType)
-            if (t.Name is "ControllerBase" or "Controller") return true;
-        return false;
+        public bool Unresolved => Declared && Value == null;
     }
+
+    /// <summary>
+    /// Whether this class is a controller, and of which framework — base types BY NAME, as above. At L1 a framework
+    /// base never resolves, but its error type keeps the name written in the base list, so `: ControllerBase` still
+    /// matches. A vendor base (`: AbpController`, a company BaseApiController shipped as a package) is just an
+    /// unknown name there; then [ApiController]/[Controller]/[RoutePrefix] decide, or ASP.NET's own discovery
+    /// convention, the "Controller" suffix — but only over a base that didn't resolve: a suffix over a base that
+    /// did resolve to something else (a game's PlayerController) is not a controller.
+    /// "ApiController" means Web API 2 only when it is System.Web.Http's or unresolved: ASP.NET Core projects
+    /// commonly declare their own `ApiController : ControllerBase`, which must keep ASP.NET Core's conventions.
+    /// </summary>
+    private static ControllerStyle? ControllerStyleOf(INamedTypeSymbol type, SyntaxList<AttributeListSyntax> attrLists)
+    {
+        var sawUnresolvedBase = false;
+        for (var t = type.BaseType; t != null; t = t.BaseType)
+        {
+            var unresolved = t.TypeKind == TypeKind.Error;
+            sawUnresolvedBase |= unresolved;
+            if (t.Name == "ApiController" && (unresolved || NamespaceOf(t) == "System.Web.Http")) return ControllerStyle.WebApi2;
+            if (t.Name is "ControllerBase" or "Controller")
+                return NamespaceOf(t) == "System.Web.Mvc" ? ControllerStyle.AspNetMvc5 : ControllerStyle.AspNetCore;
+        }
+
+        if (HasAttribute(attrLists, "ApiController") || HasAttribute(attrLists, "Controller")) return ControllerStyle.AspNetCore;
+        if (HasAttribute(attrLists, "RoutePrefix")) return ControllerStyle.WebApi2;
+        if (sawUnresolvedBase && type.Name.EndsWith("Controller", StringComparison.Ordinal)) return ControllerStyle.AspNetCore;
+        return null;
+    }
+
+    private static string? NamespaceOf(ITypeSymbol type)
+        => type.ContainingNamespace is { IsGlobalNamespace: false } ns ? ns.ToDisplayString() : null;
 
     private static bool IsBackgroundServiceType(INamedTypeSymbol type)
     {
@@ -397,55 +446,135 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         return null;
     }
 
-    private static string? ExtractRouteTemplate(SyntaxList<AttributeListSyntax> attrLists)
-    {
-        foreach (var list in attrLists)
-        foreach (var attr in list.Attributes)
-        {
-            if (attr.Name.ToString() is not ("Route" or "RouteAttribute")) continue;
-            if (attr.ArgumentList?.Arguments.FirstOrDefault()?.Expression is LiteralExpressionSyntax { Token.Value: string s })
-                return s;
-        }
-
-        return null;
-    }
-
     private static readonly Dictionary<string, string> HttpVerbAttributeNames = new(StringComparer.Ordinal)
     {
-        ["HttpGet"] = "GET", ["HttpGetAttribute"] = "GET",
-        ["HttpPost"] = "POST", ["HttpPostAttribute"] = "POST",
-        ["HttpPut"] = "PUT", ["HttpPutAttribute"] = "PUT",
-        ["HttpDelete"] = "DELETE", ["HttpDeleteAttribute"] = "DELETE",
-        ["HttpPatch"] = "PATCH", ["HttpPatchAttribute"] = "PATCH",
-        ["HttpHead"] = "HEAD", ["HttpHeadAttribute"] = "HEAD",
-        ["HttpOptions"] = "OPTIONS", ["HttpOptionsAttribute"] = "OPTIONS",
+        ["HttpGet"] = "GET",
+        ["HttpPost"] = "POST",
+        ["HttpPut"] = "PUT",
+        ["HttpDelete"] = "DELETE",
+        ["HttpPatch"] = "PATCH",
+        ["HttpHead"] = "HEAD",
+        ["HttpOptions"] = "OPTIONS",
     };
 
-    private void TryRecordHttpActionEntryPoint(string methodId, SyntaxList<AttributeListSyntax> attrLists)
+    /// <summary>Web API 2 picks an un-attributed action's verb from its name prefix, and POST when none matches.</summary>
+    private static readonly string[] WebApiVerbPrefixes = { "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS" };
+
+    /// <summary>
+    /// Records an http entry point for an action method. Where its route comes from, in ASP.NET's own order:
+    /// the action's template ([HttpGet("x")] or [Route("x")]), composed with the controller's [Route] (or Web API
+    /// 2's [RoutePrefix]); else the controller's [Route] alone; else the framework's default conventional route,
+    /// marked RouteInferred. Before, only an action carrying a verb attribute counted, and only a literal template
+    /// was read — so a conventionally routed MVC/Web API app, a method-level [Route], or a const template produced
+    /// no entry point or a wrong route, silently.
+    /// </summary>
+    private void TryRecordHttpActionEntryPoint(string methodId, MethodDeclarationSyntax node)
     {
-        if (_controllerRouteStack.Count == 0) return;
-        var controllerRoute = _controllerRouteStack.Peek();
-        if (controllerRoute == null) return; // not inside a recognized controller type
+        if (_controllerStack.Count == 0 || _controllerStack.Peek() is not { } controller) return; // not inside a recognized controller type
+        if (_model.GetDeclaredSymbol(node) is not IMethodSymbol method) return;
 
-        foreach (var list in attrLists)
-        foreach (var attr in list.Attributes)
+        string? verb = null;
+        Template verbTemplate = default, routeTemplate = default, actionNameArg = default;
+        foreach (var attr in node.AttributeLists.SelectMany(l => l.Attributes))
         {
-            if (!HttpVerbAttributeNames.TryGetValue(attr.Name.ToString(), out var httpMethod)) continue;
-
-            var methodRoute = attr.ArgumentList?.Arguments.FirstOrDefault()?.Expression is LiteralExpressionSyntax { Token.Value: string s } ? s : null;
-            var route = ComposeRoute(controllerRoute, methodRoute);
-            EntryPoints.Add(new EntryPoint(methodId, "http", httpMethod, route));
-            return; // one HTTP verb per action method is the common case
+            var name = SimpleAttributeName(attr);
+            if (verb == null && HttpVerbAttributeNames.TryGetValue(name, out var v))
+            {
+                verb = v; // one HTTP verb per action method is the common case
+                verbTemplate = TemplateOf(attr);
+            }
+            else if (name == "Route" && !routeTemplate.Declared) routeTemplate = TemplateOf(attr);
+            else if (name == "ActionName") actionNameArg = TemplateOf(attr);
         }
+
+        if (!IsAction(method, node.AttributeLists, hasRoutingAttribute: verb != null || routeTemplate.Declared)) return;
+
+        var template = verbTemplate.Declared ? verbTemplate : routeTemplate;
+        var prefix = controller.Route.Declared ? controller.Route : controller.RoutePrefix;
+        string? route;
+        var inferred = false;
+        if (template.Declared)
+            route = template.Unresolved || prefix.Unresolved ? null : ComposeRoute(prefix.Value ?? "", template.Value);
+        else if (controller.Route.Declared)
+            route = controller.Route.Unresolved ? null : ComposeRoute(controller.Route.Value!, null);
+        else if (controller.RequiresAttributeRouting)
+            return; // [ApiController] with no route anywhere: ASP.NET Core refuses to start, there is no route to record
+        else
+        {
+            route = controller.Style == ControllerStyle.WebApi2
+                ? $"api/{controller.Name.ToLowerInvariant()}/{{id?}}"
+                : $"{(controller.Area != null ? controller.Area.ToLowerInvariant() + "/" : "")}[controller]/[action]/{{id?}}";
+            inferred = true;
+        }
+
+        var actionName = actionNameArg.Value ?? method.Name;
+        if (actionNameArg.Value == null && controller.Style == ControllerStyle.AspNetCore &&
+            actionName.Length > "Async".Length && actionName.EndsWith("Async", StringComparison.Ordinal))
+            actionName = actionName[..^"Async".Length]; // ASP.NET Core 3.0+ default: SuppressAsyncSuffixInActionNames
+
+        if (route != null)
+        {
+            route = route.Replace("[controller]", controller.Name.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase)
+                .Replace("[action]", actionNameArg.Value ?? actionName.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase);
+            if (controller.Area != null)
+                route = route.Replace("[area]", controller.Area.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        var httpMethod = verb
+            ?? (controller.Style == ControllerStyle.WebApi2
+                ? WebApiVerbPrefixes.FirstOrDefault(p => method.Name.StartsWith(p, StringComparison.OrdinalIgnoreCase)) ?? "POST"
+                : "ANY"); // ASP.NET Core and MVC 5 accept every verb on an action with no verb constraint
+
+        EntryPoints.Add(new EntryPoint(methodId, "http", httpMethod, route, inferred ? true : null));
     }
 
+    /// <summary>
+    /// ASP.NET's action rules (DefaultApplicationModelProvider.IsAction) that a symbol can answer: an ordinary,
+    /// non-static method not marked [NonAction]. A method carrying a verb or [Route] attribute is taken at its
+    /// word, as before; one without must also be public, concrete, non-generic and not an override — in a
+    /// controller an override is a framework hook (OnActionExecuting, Dispose(bool)), not an action.
+    /// </summary>
+    private static bool IsAction(IMethodSymbol method, SyntaxList<AttributeListSyntax> attrLists, bool hasRoutingAttribute)
+    {
+        if (method.MethodKind != MethodKind.Ordinary || method.IsStatic || HasAttribute(attrLists, "NonAction")) return false;
+        if (hasRoutingAttribute) return true;
+        return method is { DeclaredAccessibility: Accessibility.Public, IsAbstract: false, IsGenericMethod: false, IsOverride: false }
+            && method.Name != "Dispose";
+    }
+
+    /// <summary>A template starting with "/" or "~/" is absolute (ASP.NET Core, Web API 2 and MVC 5 alike): it replaces the controller's route instead of extending it.</summary>
     private static string ComposeRoute(string controllerRoute, string? methodRoute)
     {
+        if (methodRoute != null && (methodRoute.StartsWith('/') || methodRoute.StartsWith("~/", StringComparison.Ordinal)))
+            return methodRoute.TrimStart('~').Trim('/');
+
         var combined = string.IsNullOrEmpty(methodRoute)
             ? controllerRoute
             : $"{controllerRoute.TrimEnd('/')}/{methodRoute.TrimStart('/')}";
-        return combined.Trim('/');
+        return combined.TrimStart('~').Trim('/');
     }
+
+    /// <summary>The attribute's first positional argument as a constant: a literal, a const (Routes.ById) or nameof(...) all fold.</summary>
+    private Template TemplateOf(AttributeSyntax attr)
+    {
+        var arg = attr.ArgumentList?.Arguments.FirstOrDefault(a => a.NameEquals == null);
+        if (arg == null) return default;
+        if (_model.GetConstantValue(arg.Expression) is { HasValue: true, Value: string s }) return new Template(true, s);
+        return new Template(true, arg.Expression is LiteralExpressionSyntax { Token.Value: string literal } ? literal : null);
+    }
+
+    private static bool HasAttribute(SyntaxList<AttributeListSyntax> attrLists, string simpleName)
+        => attrLists.SelectMany(l => l.Attributes).Any(a => SimpleAttributeName(a) == simpleName);
+
+    /// <summary>`[Microsoft.AspNetCore.Mvc.HttpGetAttribute]` -> "HttpGet": the name as matched, whatever the spelling.</summary>
+    private static string SimpleAttributeName(AttributeSyntax attr)
+        => NormalizeAttributeName(attr.Name switch
+        {
+            QualifiedNameSyntax q => q.Right.Identifier.Text,
+            AliasQualifiedNameSyntax a => a.Name.Identifier.Text,
+            SimpleNameSyntax s => s.Identifier.Text,
+            _ => attr.Name.ToString(),
+        });
 
     /// <summary>
     /// Syntactic pattern match for `mediator.Send(new FooCommand())` / `.Publish(new FooEvent())` — same

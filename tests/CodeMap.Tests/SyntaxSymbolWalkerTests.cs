@@ -57,7 +57,7 @@ public class SyntaxSymbolWalkerTests
         Assert.AreEqual("M:N.E.Ext(System.String,System.Int32)", edge.To);
     }
 
-    private static SyntaxSymbolWalker Walk(string source)
+    internal static SyntaxSymbolWalker Walk(string source)
     {
         var tree = CSharpSyntaxTree.ParseText(source, path: "Test.cs");
         var compilation = CSharpCompilation.Create(
