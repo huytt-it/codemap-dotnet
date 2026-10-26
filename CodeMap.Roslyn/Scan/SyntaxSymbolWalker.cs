@@ -813,7 +813,9 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
             RecordVirtualCall(edge, method, node.Expression is not MemberAccessExpressionSyntax { Expression: BaseExpressionSyntax }, null);
     }
 
-    private static bool IsOverridable(IMethodSymbol method) => method.IsVirtual || method.IsAbstract || method.IsOverride;
+    /// <summary>A class member an override can replace. An interface member is abstract too, but what runs there is an implementation — the interface pass's business.</summary>
+    private static bool IsOverridable(IMethodSymbol method)
+        => method.ContainingType.TypeKind != TypeKind.Interface && (method.IsVirtual || method.IsAbstract || method.IsOverride);
 
     /// <summary>
     /// Records a call that dispatches virtually, for the override-expand pass. `base.M()` doesn't (IsVirtual false):
