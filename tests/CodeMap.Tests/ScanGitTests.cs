@@ -94,6 +94,173 @@ public class ScanGitTests
         CollectionAssert.AreEquivalent(new[] { "Orders/Cancel.cs" }, tickets.Single(t => t.Ticket == "SHO_1234").Files);
     }
 
+    // Ticket IDs live in more than the subject line: "Fixes #1234" in the body, a PR title that GitHub puts in the
+    // body of a merge commit, several tickets closed by one change. Reading only the subject, and only its first
+    // match, dropped all of those without a word.
+
+    [TestMethod]
+    public void Ticket_that_appears_only_in_the_commit_body_is_found()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "tidy the cancel flow\n\nPart of #1234, follow-up to the refactor.", ("a.cs", "class A {}"));
+
+        var ticket = ReadTickets(RunScanGit(repo)).Single(t => t.Ticket == "1234");
+
+        CollectionAssert.AreEquivalent(new[] { "a.cs" }, ticket.Files);
+        Assert.AreEqual("tidy the cancel flow", ticket.Message); // the subject stays the display text; the body is for matching only
+    }
+
+    [TestMethod]
+    public void Every_ticket_in_a_commit_gets_that_commit_and_its_files()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1111 and #2222 in one go\n\nAlso closes BUG-3333.", ("a.cs", "class A {}"), ("b.cs", "class B {}"));
+
+        var tickets = ReadTickets(RunScanGit(repo));
+
+        CollectionAssert.AreEquivalent(new[] { "1111", "2222", "3333" }, tickets.Select(t => t.Ticket).ToArray());
+        foreach (var ticket in tickets)
+        {
+            Assert.AreEqual(1, ticket.Commits.Count, $"ticket {ticket.Ticket}");
+            CollectionAssert.AreEquivalent(new[] { "a.cs", "b.cs" }, ticket.Files, $"ticket {ticket.Ticket}");
+        }
+    }
+
+    [TestMethod] // "fix #1234" in the subject and "Fixes #1234" in the body is one ticket mentioned twice, not a commit counted twice
+    public void Ticket_repeated_within_one_commit_counts_that_commit_once()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 and again #1234\n\nFixes #1234", ("a.cs", "class A {}"));
+
+        var ticket = ReadTickets(RunScanGit(repo)).Single();
+
+        Assert.AreEqual("1234", ticket.Ticket);
+        Assert.AreEqual(1, ticket.Commits.Count);
+    }
+
+    [TestMethod] // the probe asks "does this pattern match anything"; a body-only convention has to count or sync would refuse a repo it can read
+    public void Repo_whose_tickets_are_only_in_bodies_passes_the_pattern_probe()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "cancel flow", ("a.cs", "class A {}"));
+        GitFixtureHelper.Commit(repo, "cancel flow, part 2\n\nTicket: BUG-4821", ("b.cs", "class B {}"));
+
+        var outDir = TestPaths.NewTempDir();
+        var exitCode = ScanGitCommand.Run(new[] { "--repo", repo, "--out", outDir });
+
+        Assert.AreEqual(0, exitCode);
+        CollectionAssert.AreEquivalent(new[] { "4821" }, ReadTickets(outDir).Select(t => t.Ticket).ToArray());
+    }
+
+    [TestMethod] // the body sits between the header and the --name-status rows in git's output; it must not be able to inject rows
+    public void Body_lines_that_look_like_name_status_rows_are_not_read_as_files()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(
+            repo, "fix #1234 order cancel\n\nM\tghost/Ghost.cs\nR100\told/A.cs\tnew/A.cs\n\tindented\twith tabs | and a pipe\n\n\nlast line",
+            ("Cancel.cs", "class C {}"));
+
+        var ticket = ReadTickets(RunScanGit(repo)).Single(t => t.Ticket == "1234");
+
+        CollectionAssert.AreEquivalent(new[] { "Cancel.cs" }, ticket.Files);
+    }
+
+    [TestMethod] // a commit with no body at all is the common case and must keep parsing exactly as before
+    public void Commit_with_empty_body_keeps_its_file_list()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 first", ("a.cs", "class A {}"));
+        GitFixtureHelper.Commit(repo, "fix #1234 second\n\nwith a body", ("b.cs", "class B {}"));
+        GitFixtureHelper.Commit(repo, "fix #1234 third", ("c.cs", "class C {}"));
+
+        var ticket = ReadTickets(RunScanGit(repo)).Single();
+
+        CollectionAssert.AreEquivalent(new[] { "a.cs", "b.cs", "c.cs" }, ticket.Files);
+        Assert.AreEqual(3, ticket.Commits.Count);
+    }
+
+    [TestMethod] // d773a0d: with the default pattern the PR number is not a ticket. Reading the body must not bring it back
+    public void Github_merge_subject_does_not_contribute_its_pull_request_number()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1000 initial", ("a.cs", "class A {}"));
+        GitFixtureHelper.CommitOnBranchAndMerge(
+            repo, "feature", "wip", "Merge pull request #456 from org/SHO_1234-fix-cancel",
+            ("Orders/Cancel.cs", "class Cancel {}"));
+
+        var tickets = ReadTickets(RunScanGit(repo));
+
+        CollectionAssert.AreEquivalent(new[] { "1000" }, tickets.Select(t => t.Ticket).ToArray());
+    }
+
+    [TestMethod] // the same merge, with a pattern that can read the ticket out of the branch name
+    public void Github_merge_subject_still_yields_the_ticket_in_its_branch_name()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "SHO_1000 initial", ("a.cs", "class A {}"));
+        GitFixtureHelper.CommitOnBranchAndMerge(
+            repo, "feature", "wip", "Merge pull request #456 from org/SHO_1234-fix-cancel",
+            ("Orders/Cancel.cs", "class Cancel {}"));
+
+        var tickets = ReadTickets(RunScanGitWithPattern(repo, @"([A-Z][A-Z0-9]*_\d+)"));
+
+        CollectionAssert.AreEquivalent(new[] { "SHO_1000", "SHO_1234" }, tickets.Select(t => t.Ticket).ToArray());
+    }
+
+    [TestMethod] // GitHub puts the PR title in the merge commit's body: that is where the ticket usually is, and "#456" in the subject is still not one
+    public void Github_merge_body_supplies_tickets_while_the_pull_request_number_is_ignored()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1000 initial", ("a.cs", "class A {}"));
+        GitFixtureHelper.CommitOnBranchAndMerge(
+            repo, "feature", "wip", "Merge pull request #456 from org/some-branch\n\nFix order cancel, closes #789",
+            ("Orders/Cancel.cs", "class Cancel {}"));
+
+        var tickets = ReadTickets(RunScanGit(repo));
+
+        CollectionAssert.AreEquivalent(new[] { "1000", "789" }, tickets.Select(t => t.Ticket).ToArray());
+        CollectionAssert.AreEquivalent(new[] { "Orders/Cancel.cs" }, tickets.Single(t => t.Ticket == "789").Files);
+    }
+
+    [TestMethod] // Bitbucket's equivalent merge template carries the PR number the same way
+    public void Bitbucket_merge_subject_does_not_contribute_its_pull_request_number()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1000 initial", ("a.cs", "class A {}"));
+        GitFixtureHelper.CommitOnBranchAndMerge(
+            repo, "feature", "wip", "Merged in feature/cancel (pull request #245)", ("Orders/Cancel.cs", "class Cancel {}"));
+
+        var tickets = ReadTickets(RunScanGit(repo));
+
+        CollectionAssert.AreEquivalent(new[] { "1000" }, tickets.Select(t => t.Ticket).ToArray());
+    }
+
+    [TestMethod] // a squash commit's "(#1019)" is documented as a known limitation (d773a0d), and a "#1234" a person typed into a subject is a ticket: only the merge template is neutralised
+    public void Hash_number_typed_into_an_ordinary_subject_is_still_a_ticket()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "Merge fix for #1234 into the cancel flow", ("a.cs", "class A {}"));
+
+        var ticket = ReadTickets(RunScanGit(repo)).Single();
+
+        Assert.AreEqual("1234", ticket.Ticket);
+    }
+
+    [TestMethod] // a repo made of nothing but PR-number merges has no ticket convention at all: say so instead of reporting PR numbers as tickets
+    public void Repo_of_only_pull_request_merges_fails_the_pattern_probe_under_the_default_pattern()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "initial", ("a.cs", "class A {}"));
+        GitFixtureHelper.CommitOnBranchAndMerge(
+            repo, "feature", "wip", "Merge pull request #456 from org/SHO_1234-fix-cancel", ("Orders/Cancel.cs", "class Cancel {}"));
+
+        var outDir = TestPaths.NewTempDir();
+        var exitCode = ScanGitCommand.Run(new[] { "--repo", repo, "--out", outDir });
+
+        Assert.AreEqual(ScanGitCommand.TicketsRefusedExitCode, exitCode);
+        Assert.IsFalse(File.Exists(Path.Combine(outDir, "index", "ticket-files.jsonl")));
+    }
+
     [TestMethod] // a path that no longer exists can never join to symbols.jsonl, which only holds files that do
     public void History_before_a_rename_is_reported_under_the_current_file_name()
     {
@@ -229,7 +396,7 @@ public class ScanGitTests
     }
 
     [TestMethod]
-    public void No_matching_ticket_in_probe_window_refuses_to_write_output()
+    public void No_matching_ticket_in_probe_window_refuses_to_write_ticket_files()
     {
         var repo = GitFixtureHelper.NewRepo();
         GitFixtureHelper.Commit(repo, "a commit with no ticket convention at all", ("a.cs", "class A {}"));
@@ -237,8 +404,40 @@ public class ScanGitTests
         var outRoot = TestPaths.NewTempDir();
         var exitCode = ScanGitCommand.Run(new[] { "--repo", repo, "--out", outRoot });
 
-        Assert.AreEqual(1, exitCode);
+        Assert.AreEqual(ScanGitCommand.TicketsRefusedExitCode, exitCode);
         Assert.IsFalse(File.Exists(Path.Combine(outRoot, "index", "ticket-files.jsonl")));
+    }
+
+    [TestMethod] // co-change never reads a ticket ID, so a convention the pattern cannot see must not cost the file pairs too
+    public void No_matching_ticket_in_probe_window_still_writes_co_change()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        for (var i = 0; i < 3; i++)
+            GitFixtureHelper.Commit(repo, $"pass {i}, nothing the default ticket pattern can match", ("a.cs", $"v{i}"), ("b.cs", $"v{i}"));
+
+        var outRoot = TestPaths.NewTempDir();
+        var stderr = new StringWriter();
+        var previous = Console.Error;
+        int exitCode;
+        try
+        {
+            Console.SetError(stderr);
+            exitCode = ScanGitCommand.Run(new[] { "--repo", repo, "--out", outRoot });
+        }
+        finally
+        {
+            Console.SetError(previous);
+        }
+
+        // Still not a success: the ticket half is missing, and the caller has to be told so. A distinct code lets
+        // `sync` tell this apart from "nothing was written" without parsing stderr.
+        Assert.AreEqual(ScanGitCommand.TicketsRefusedExitCode, exitCode);
+        Assert.IsFalse(File.Exists(Path.Combine(outRoot, "index", "ticket-files.jsonl")));
+        StringAssert.Contains(stderr.ToString(), "ticketPattern");
+        StringAssert.Contains(stderr.ToString(), "Refusing to write an empty ticket-files.jsonl");
+
+        var pair = ReadCoChanges(outRoot).Single(c => c.FileA == "a.cs" && c.FileB == "b.cs");
+        Assert.AreEqual(3, pair.Together);
     }
 
     [TestMethod]
@@ -310,6 +509,46 @@ public class ScanGitTests
 
         var ticket = ReadTickets(outDir).Single(t => t.Ticket == "1234");
         CollectionAssert.AreEquivalent(new[] { "src/Orders/Svc.cs" }, ticket.Files);
+    }
+
+    // By default git quotes a path with non-ASCII bytes and octal-escapes it ("\346\263\250..."). The quoted form ends
+    // in '"' rather than ".cs", so the extension filter drops it: a Japanese or Vietnamese file name never reaches
+    // ticket-files.jsonl at all, and a ticket that touched only such files disappears. Each test keeps one ASCII
+    // file in the commit so the ticket survives and the assertion shows exactly which files went missing.
+    [TestMethod]
+    public void Non_ascii_file_names_are_recorded_as_written_not_escaped_by_git()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 order cancel",
+            ("Plain.cs", "class P {}"), ("注文/キャンセル.cs", "class A {}"), ("Đơn/Hủy.cs", "class B {}"));
+
+        var ticket = ReadTickets(RunScanGit(repo)).Single(t => t.Ticket == "1234");
+
+        CollectionAssert.AreEquivalent(new[] { "Plain.cs", "注文/キャンセル.cs", "Đơn/Hủy.cs" }, ticket.Files);
+    }
+
+    [TestMethod] // rename resolution is keyed on path strings, so the name it resolves to has to be the real one too
+    public void File_renamed_to_a_non_ascii_name_resolves_to_that_name()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 add", ("Plain.cs", "class P {}"), ("Svc.cs", "class Svc { void Cancel() {} }"));
+        GitFixtureHelper.Rename(repo, "Svc.cs", "注文.cs", "fix #1234 rename");
+
+        var ticket = ReadTickets(RunScanGit(repo)).Single(t => t.Ticket == "1234");
+
+        CollectionAssert.AreEquivalent(new[] { "Plain.cs", "注文.cs" }, ticket.Files);
+    }
+
+    [TestMethod] // the prefix strip compares from the first character, so an opening quote would defeat it as well
+    public void Non_ascii_file_name_in_a_nested_solution_is_rebased()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 order cancel", ("src/Plain.cs", "class P {}"), ("src/注文/Svc.cs", "class Svc {}"));
+
+        var outDir = RunScanGitWithMeta(repo, solutionPath: "src/App.sln");
+
+        var ticket = ReadTickets(outDir).Single(t => t.Ticket == "1234");
+        CollectionAssert.AreEquivalent(new[] { "Plain.cs", "注文/Svc.cs" }, ticket.Files);
     }
 
     [TestMethod] // the join is silent when it fails, so scan-git has to say so itself

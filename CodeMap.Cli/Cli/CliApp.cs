@@ -94,7 +94,7 @@ internal static class CliApp
               codemap find     <index> --query <text>
               codemap where    <index> --query "<business description>"
               codemap impact   <index> --symbol <docId> [--depth 5] [--full] [--out <file.md>]
-              codemap slice    <index> --symbol <docId> [--depth 3] [--out <file.md>]
+              codemap slice    <index> --symbol <docId> [--depth 3] [--max-lines 40] [--out <file.md>]
 
             <index> above means either --index <dir> or --project <name> (resolved via codemap.projects.json).
 

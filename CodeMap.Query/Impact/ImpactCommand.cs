@@ -9,7 +9,8 @@ internal static class ImpactCommand
     public static int Run(string[] rawArgs)
     {
         var args = Args.Parse(rawArgs, options: IndexPathResolver.OptionNames.Concat(new[] { "symbol", "depth", "out" }).ToArray(), flags: new[] { "full" });
-        var indexDir = IndexPathResolver.Resolve(args);
+        var location = IndexPathResolver.ResolveLocation(args);
+        var indexDir = location.IndexDir;
         var symbolId = args.Require("symbol");
         var depth = args.GetIntOrDefault("depth", 5);
         var full = args.HasFlag("full");
@@ -23,7 +24,7 @@ internal static class ImpactCommand
 
         var index = ImpactIndex.Load(indexDir);
         var result = ImpactEngine.Traverse(index, symbolId, depth);
-        var markdown = CompactRenderer.Render(result, full, index.Meta);
+        var markdown = CompactRenderer.Render(result, full, index.Meta, location.RepoRoot);
 
         if (outFile != null)
         {

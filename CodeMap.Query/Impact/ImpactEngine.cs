@@ -42,7 +42,7 @@ public static class ImpactEngine
 
         var unconfirmedBinding = ComputeUnconfirmedBinding(index, symbolId, visitedDepth.Keys, edgesUsed);
 
-        var directFanIn = index.ReverseEdges.TryGetValue(symbolId, out var direct) ? direct.Count : 0;
+        var (directFanIn, directCallersInferred) = CountDirectCallers(index, symbolId);
 
         var entryPoints = new List<ReachedEntryPoint>();
         var testsReached = new List<string>();
@@ -58,14 +58,20 @@ public static class ImpactEngine
 
             var isConfirmed = !unconfirmedBinding.Contains(id);
             if (index.EntryPointsById.TryGetValue(id, out var ep))
-                entryPoints.Add(new ReachedEntryPoint(id, displayName, ep.Type, ep.HttpMethod, ep.Route, project, d, isConfirmed));
-            else if (project.Contains("Test", StringComparison.OrdinalIgnoreCase))
+                entryPoints.Add(new ReachedEntryPoint(id, displayName, ep.Type, ep.HttpMethod, ep.Route, project, d, isConfirmed, ep.RouteInferred == true));
+            else if (TestProjectName.IsTestProject(project))
                 testsReached.Add(displayName);
             else
                 intermediateCallers.Add(new CallerNode(id, displayName, project, d, isConfirmed));
         }
 
-        var moduleFanIn = entryPoints
+        // Risk, hub and the per-module count are judged on the confirmed part: an entry point reachable only
+        // through an implementation DI does not bind at that call site is real but speculative (decorator
+        // patterns especially), and one wide interface would otherwise tip a symbol into "hub" or a 10/10 score
+        // by itself. The unconfirmed ones are still in EntryPoints and the renderers still show them.
+        var confirmedEntryPoints = entryPoints.Where(e => e.IsConfirmedBinding).ToList();
+
+        var moduleFanIn = confirmedEntryPoints
             .GroupBy(e => e.Project, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
 
@@ -76,16 +82,18 @@ public static class ImpactEngine
         var rootFile = rootSymbol?.File;
         var relatedTickets = rootFile == null
             ? new List<TicketFileRecord>()
-            : index.Tickets.Where(t => t.Files.Contains(rootFile, StringComparer.Ordinal)).ToList();
+            : index.Tickets.Where(t => t.Files.Contains(rootFile, FilePathComparison.Comparer)).ToList();
         var coChanging = rootFile == null
             ? new List<CoChangeRecord>()
-            : index.CoChanges.Where(c => c.FileA == rootFile || c.FileB == rootFile).ToList();
+            : index.CoChanges.Where(c => FilePathComparison.Comparer.Equals(c.FileA, rootFile) || FilePathComparison.Comparer.Equals(c.FileB, rootFile)).ToList();
 
         var screens = BuildScreens(index, entryPoints);
 
-        var blindSpots = BuildBlindSpots(index, visitedDepth.Keys, rootSymbol, viaMediatrCount, viaInterfaceCount, viaInterfaceUnconfirmedCount, screens);
+        var blindSpots = BuildBlindSpots(
+            index, visitedDepth.Keys, rootSymbol, viaMediatrCount, viaInterfaceCount, viaInterfaceUnconfirmedCount, screens,
+            inferredRouteCount: entryPoints.Count(e => e.RouteInferred));
 
-        var riskScore = ComputeRiskScore(entryPoints.Count, testsReached.Count, viaInterfaceCount);
+        var riskScore = ComputeRiskScore(confirmedEntryPoints.Count, testsReached.Count, viaInterfaceCount - viaInterfaceUnconfirmedCount);
 
         return new ImpactResult
         {
@@ -94,10 +102,12 @@ public static class ImpactEngine
             File = rootSymbol?.File,
             Line = rootSymbol?.Line,
             DirectFanIn = directFanIn,
+            DirectCallersInferred = directCallersInferred,
             DepthScanned = depth,
-            IsHub = entryPoints.Count > HubEntryPointThreshold,
+            IsHub = confirmedEntryPoints.Count > HubEntryPointThreshold,
             RiskScore = riskScore,
             ViaInterfaceCount = viaInterfaceCount,
+            ViaInterfaceUnconfirmedCount = viaInterfaceUnconfirmedCount,
             ViaMediatrCount = viaMediatrCount,
             EntryPoints = entryPoints.OrderBy(e => e.Project, StringComparer.Ordinal).ThenBy(e => e.DisplayName, StringComparer.Ordinal).ToList(),
             Screens = screens,
@@ -109,6 +119,24 @@ public static class ImpactEngine
             ModuleFanIn = moduleFanIn,
             Predecessors = predecessors,
         };
+    }
+
+    /// <summary>
+    /// Callers, not edges: the reverse-edge list also holds every extra call site of the same caller, field
+    /// reads/writes, inherits/implements edges, and the interface-expansion copies, so its length says little
+    /// about how many methods depend on the symbol. Counts distinct <c>From</c> over call and construction edges
+    /// (a constructor's only incoming edges are <c>new</c>), leaving out the symbol calling itself. Of those,
+    /// reports how many callers have nothing but expanded (Via) edges into the symbol.
+    /// </summary>
+    private static (int Callers, int InferredOnly) CountDirectCallers(ImpactIndex index, string symbolId)
+    {
+        if (!index.ReverseEdges.TryGetValue(symbolId, out var incoming)) return (0, 0);
+
+        var byCaller = incoming
+            .Where(e => e.Kind is "call" or "new" && e.From != symbolId)
+            .GroupBy(e => e.From, StringComparer.Ordinal)
+            .ToList();
+        return (byCaller.Count, byCaller.Count(g => g.All(e => e.Via != null)));
     }
 
     /// <summary>
@@ -215,7 +243,7 @@ public static class ImpactEngine
 
     private static List<string> BuildBlindSpots(
         ImpactIndex index, IEnumerable<string> reachedIds, SymbolRecord? rootSymbol, int mediatrCount, int interfaceCount,
-        int unconfirmedInterfaceCount, List<ReachedScreen> screens)
+        int unconfirmedInterfaceCount, List<ReachedScreen> screens, int inferredRouteCount)
     {
         var spots = new List<string>();
 
@@ -225,6 +253,11 @@ public static class ImpactEngine
         var ambiguousScreens = screens.Count(s => s.MatchKind == "ambiguous");
         if (ambiguousScreens > 0)
             spots.Add($"{ambiguousScreens} FE screen link(s) are ambiguous — the normalized route matched more than one backend endpoint.");
+        var suffixScreens = screens.Count(s => s.MatchKind == "suffix");
+        if (suffixScreens > 0)
+            spots.Add($"{suffixScreens} FE screen link(s) matched by route suffix only — the frontend URL starts with a base-URL variable the scan could not resolve, so the missing prefix (such as api/) was assumed.");
+        if (inferredRouteCount > 0)
+            spots.Add($"{inferredRouteCount} HTTP entry point(s) have a route inferred from the default convention ({{controller}}/{{action}}/{{id?}}), not declared by an attribute — the app's real route table may differ, and FE links to them rest on the same guess.");
 
         if (rootSymbol == null)
             spots.Add("This symbol was not found in symbols.jsonl — the docId may be stale (re-run `codemap find`), or the index is out of date.");

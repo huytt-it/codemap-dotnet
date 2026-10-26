@@ -1,5 +1,6 @@
 using System.Text;
 using CodeMap.Query.Git;
+using CodeMap.Query.Impact;
 using CodeMap.Query.Models;
 
 namespace CodeMap.Query.Reporting;
@@ -9,9 +10,10 @@ namespace CodeMap.Query.Reporting;
 /// project's language convention (source/runtime output in English; only docs/ in the CODEMAP-SPEC.md sense are
 /// Vietnamese) — same call already made for MAP.md's section headers.
 ///
-/// Git commands run against the CURRENT WORKING DIRECTORY, not a `--repo` flag: none of the query commands
-/// (map/impact/slice) take one, so the natural reading is that the user runs them from inside the target repo
-/// (like any git-aware CLI), and git auto-discovers the repo root upward from there.
+/// Git commands run against the repo the caller names (<c>cwdOverride</c>) — for a registered project, the
+/// registry's repo, so the answer does not depend on where the process was started (an MCP server's cwd is its
+/// client's choice). With a bare `--index` there is nothing to name one, so the old convention holds: the user
+/// runs the command from inside the target repo (like any git-aware CLI) and git auto-discovers the root upward.
 /// </summary>
 public static class StalenessBanner
 {
@@ -22,12 +24,13 @@ public static class StalenessBanner
         "> environment-specific config, real data in the database.\n" +
         "> If a question falls into the NOT COVERED category, say plainly that this file can't answer it.\n";
 
-    /// <param name="cwdOverride">Defaults to Environment.CurrentDirectory (production use — see class doc). Tests pass an explicit repo path instead of mutating global process state.</param>
+    /// <param name="relevantFiles">The files the answer depends on, in the index's own path space: relative to the scanned solution's directory, as symbols.jsonl records them. Git's repo-root-relative paths are rebased onto that space before comparing (GitPathRebaser).</param>
+    /// <param name="cwdOverride">The repo to run git in. Null means Environment.CurrentDirectory (a bare `--index`, see class doc). Pass the registered project's repo, so the output is the same wherever the process runs; tests pass one too, instead of mutating global process state.</param>
     public static string Render(MetaModel? meta, IReadOnlyCollection<string>? relevantFiles = null, string? cwdOverride = null)
     {
         var sb = new StringBuilder();
         sb.Append("<!-- codemap v2 · ").Append(HeaderLine(meta)).Append('\n');
-        sb.Append("     ").Append(StalenessLine(meta, relevantFiles, cwdOverride ?? Environment.CurrentDirectory)).Append(" -->\n\n");
+        sb.Append("     ").Append(StalenessLine(meta, relevantFiles, cwdOverride)).Append(" -->\n\n");
         sb.Append(ScopeNote);
         return sb.ToString();
     }
@@ -37,8 +40,10 @@ public static class StalenessBanner
             ? "no meta.json found"
             : $"index commit {Short(meta.GitCommit)} · scanned {meta.IndexedAt}";
 
-    private static string StalenessLine(MetaModel? meta, IReadOnlyCollection<string>? relevantFiles, string cwd)
+    private static string StalenessLine(MetaModel? meta, IReadOnlyCollection<string>? relevantFiles, string? repoOverride)
     {
+        var cwd = repoOverride ?? Environment.CurrentDirectory;
+
         if (meta == null)
             return "staleness unknown (no meta.json — run `codemap scan` to produce one)";
         if (meta.GitCommit == null)
@@ -46,30 +51,55 @@ public static class StalenessBanner
 
         var currentHead = GitRepoInfo.TryGetHeadCommit(cwd);
         if (currentHead == null)
-            return "could not run git in the current directory — run this command from inside the target repo for a staleness comparison";
+            return repoOverride == null
+                ? "could not run git in the current directory — run this command from inside the target repo for a staleness comparison"
+                : $"could not run git in {repoOverride} — check that the project's repo in codemap.projects.json exists and is a git repository";
+
+        // git reports repo-root-relative paths; the index (and so relevantFiles) is relative to the solution's own
+        // directory. They differ whenever the solution is not at the repo root, so bring git's side over.
+        var prefix = GitPathRebaser.PrefixOf(meta);
+        List<string>? InIndexSpace(List<string>? gitPaths) =>
+            prefix == null ? gitPaths : gitPaths?.Select(f => GitPathRebaser.Rebase(prefix, f)).ToList();
+
+        // Same path comparison as every other file join in the index: case-insensitive only where the file system is.
+        var relevantSet = relevantFiles is { Count: > 0 } ? new HashSet<string>(relevantFiles, FilePathComparison.Comparer) : null;
+        int CountIn(IEnumerable<string> files) => relevantSet == null ? files.Count() : files.Count(relevantSet.Contains);
+        var scope = relevantSet == null ? "file(s)" : "relevant file(s)";
+
+        var uncommitted = InIndexSpace(GitRepoInfo.TryGetUncommittedFiles(cwd));
 
         if (string.Equals(currentHead, meta.GitCommit, StringComparison.OrdinalIgnoreCase))
-            return $"current HEAD {Short(currentHead)} · matches the scan, index is fresh";
+        {
+            // HEAD matching is not enough: an edit that is not committed yet is invisible to it.
+            if (uncommitted == null)
+                return $"current HEAD {Short(currentHead)} · matches the scan (could not check for uncommitted changes)";
+
+            var dirty = CountIn(uncommitted);
+            return dirty == 0
+                ? $"current HEAD {Short(currentHead)} · matches the scan, index is fresh"
+                : $"current HEAD {Short(currentHead)} · matches the scan, but {dirty} {scope} have uncommitted changes";
+        }
 
         var commitCount = GitRepoInfo.TryGetCommitCountSince(cwd, meta.GitCommit);
-        var changedFiles = GitRepoInfo.TryGetChangedFilesSince(cwd, meta.GitCommit);
+        var committed = InIndexSpace(GitRepoInfo.TryGetChangedFilesSince(cwd, meta.GitCommit));
 
         var commitText = commitCount is { } n ? $"{n} commit(s) behind" : "commit count behind unknown";
 
         string fileText;
-        if (changedFiles == null)
+        if (committed == null)
         {
             fileText = "changed-file count unknown";
         }
-        else if (relevantFiles is { Count: > 0 })
-        {
-            var relevantSet = new HashSet<string>(relevantFiles, StringComparer.OrdinalIgnoreCase);
-            var relevantChanged = changedFiles.Count(f => relevantSet.Contains(f));
-            fileText = $"{relevantChanged} relevant file(s) changed since the scan";
-        }
         else
         {
-            fileText = $"{changedFiles.Count} file(s) changed in the repo since the scan";
+            // A file can be both committed-over and dirty; Union counts it once.
+            var changed = uncommitted == null ? committed : committed.Union(uncommitted, FilePathComparison.Comparer).ToList();
+            fileText = relevantSet == null
+                ? $"{CountIn(changed)} file(s) changed in the repo since the scan"
+                : $"{CountIn(changed)} relevant file(s) changed since the scan";
+
+            var dirty = uncommitted == null ? 0 : CountIn(uncommitted);
+            if (dirty > 0) fileText += $" ({dirty} uncommitted)";
         }
 
         return $"current HEAD {Short(currentHead)} · {commitText}, {fileText}";

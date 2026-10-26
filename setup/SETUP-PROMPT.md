@@ -116,10 +116,16 @@ một bản `codemap.projects.json` khác đang che khuất, phải tìm và xo�
   codemap sync --project <tên>      (hoặc `codemap sync --all` nếu khai báo nhiều project)
 
 Lưu ý khi chạy:
+- `sync` dựng index mới ở thư mục tạm rồi mới thay index cũ, nên lỗi giữa chừng không làm hỏng
+  index đang có. Xong thì kiểm `<output>/index/sync-complete.json` (hoặc dòng `sync :` trong
+  `codemap projects`): có file này nghĩa là lần sync đã hoàn tất, và `steps` ghi bước nào bị bỏ
+  qua. Đừng chỉ dựa vào việc `meta.json` tồn tại.
 - `scan` lỗi → thử `dotnet restore` trong repo trước, rồi chạy lại. Vẫn lỗi thì báo tôi;
-  còn cách `codemap scan --solution ... --out ... --syntax-only` quét nông hơn.
-- **Quy ước ticket: kiểm TRƯỚC khi chạy, đừng chờ lỗi.** Chạy `git log --pretty=format:%s -80`
-  trong repo đích, đọc message thật, rồi tự quyết định có cần `ticketPattern` riêng không.
+  còn cách `codemap scan --solution ... --out ... --syntax-only` quét nông hơn (vẫn có cạnh gọi,
+  entry point và DI, nhưng thiếu các lời gọi sang kiểu của NuGet/framework).
+- **Quy ước ticket: kiểm TRƯỚC khi chạy, đừng chờ lỗi.** Chạy `git log --pretty=format:"%s%n%b" -80`
+  trong repo đích (tool đọc cả subject lẫn body, và lấy mọi mã ticket trong một commit), đọc
+  message thật, rồi tự quyết định có cần `ticketPattern` riêng không.
   Mẫu mặc định là `(?:#|TICKET-|BUG-|JIRA-)(\d{3,6})`. Ba điều phải tự kiểm:
 
   1. **Mặc định "khớp" không có nghĩa là khớp đúng.** GitHub squash-merge gắn số PR vào cuối
@@ -138,10 +144,11 @@ Lưu ý khi chạy:
   `<output>/index/ticket-files.jsonl`** và hỏi lại: đây có đúng là mã ticket của team tôi không,
   hay là số PR. Chỉ đi tiếp khi tôi xác nhận.
 
-  Nếu `scan-git` báo thẳng "No ticket ID matched" thì cũng làm đúng quy trình trên. Ngoài ra
-  nhớ: team không squash mà giữ merge commit thì ticket ID phải nằm trong **từng commit của
-  nhánh** — `git log --name-only` không sinh danh sách file cho merge commit, nên message
-  `Merge pull request #4 from ...` không đóng góp dữ liệu nào.
+  Nếu `scan-git` báo thẳng "No ticket ID matched" thì cũng làm đúng quy trình trên (lúc đó
+  `co-change.jsonl` vẫn được ghi, chỉ thiếu `ticket-files.jsonl`, và lệnh thoát với mã 2).
+  Với merge commit kiểu `Merge pull request #4 from org/SHO_1234-fix`: tool lấy danh sách file
+  của merge theo first-parent, và khi dùng mẫu mặc định thì **bỏ qua số PR** (`#4`); mã ticket
+  trong tên nhánh vẫn được lấy nếu `ticketPattern` khớp nó.
 - `scan-fe` bị bỏ qua → thư mục FE phải đã chạy `npm install`. Không có FE riêng thì đúng là
   phải bỏ qua, đừng bịa ra.
 

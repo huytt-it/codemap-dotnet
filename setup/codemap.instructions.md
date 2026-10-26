@@ -203,6 +203,8 @@ nhau** rồi đếm cặp trùng (`注文をキャンセル` → `注文`, `文�
   **toàn hiragana** (`ひもづけ`) thì giữ nguyên, vì không còn gì khác để khớp.
 - **Vẫn không có ngưỡng điểm tối thiểu.** `where` luôn trả về top N kể cả khi điểm rất thấp,
   nên điểm thấp không có nghĩa là "gần đúng" — nó thường có nghĩa là "không liên quan".
+- **Tra theo mã ticket thì viết đúng như trong commit:** `#4821`, `TICKET-4821`, `SHO-1234`.
+  Số trần trong câu hỏi (`lỗi 500`, `2026`) không được coi là mã ticket.
 
 ### Bắt buộc: đọc dòng lý do, đừng chỉ nhìn thứ hạng
 
@@ -230,13 +232,18 @@ Nên với codebase này, chia việc rõ ràng:
 
 ### "0 entry point" không có nghĩa là không ảnh hưởng
 
-Tool chỉ nhận diện được ba loại entry point: MVC Controller (`ControllerBase`/`Controller`),
-BackgroundService/IHostedService, MediatR handler. **Razor Pages và Minimal API
-(`app.MapGet`/`MapPost`) không được nhận diện.**
+Tool chỉ nhận diện được ba loại entry point: controller MVC/Web API (`ControllerBase`,
+`Controller`, `ApiController`), BackgroundService/IHostedService, MediatR handler. **Razor Pages
+và Minimal API (`app.MapGet`/`MapPost`) không được nhận diện.**
+
+Action không có attribute route vẫn được tính, nhưng route của nó là **suy theo quy ước mặc
+định** `{controller}/{action}/{id?}` — report ghi `route inferred from convention`. Bảng route
+thật của app có thể khác; khi trả lời, nói rõ route đó là suy diễn.
 
 Nếu report ghi 0 entry point nhưng fan-in lớn hơn 0, kết luận đúng là *"tool không phân loại
 được"*, không phải *"không có gì bị ảnh hưởng"*. Lúc đó đề nghị tôi chạy lại với `--full` để
-xem caller trung gian.
+xem caller trung gian. Fan-in là số **method khác nhau** gọi hoặc khởi tạo trực tiếp symbol
+này, không phải số chỗ gọi.
 
 ### Cạnh suy diễn có thể thừa
 
@@ -247,7 +254,8 @@ xem caller trung gian.
 Report tách sẵn hai nhóm: entry point dưới heading chính là loại **có đăng ký DI thật**;
 những cái nằm dưới **"Other possible implementations"** chỉ là class cùng implement interface,
 không xác nhận được là nhánh chạy thật. Khi trả lời, giữ nguyên sự phân biệt đó — đừng gộp
-hai nhóm lại thành một danh sách "bị ảnh hưởng".
+hai nhóm lại thành một danh sách "bị ảnh hưởng". Điểm risk và cảnh báo hub chỉ tính nhóm đã
+xác nhận; phần chưa xác nhận được ghi riêng ngay bên dưới.
 
 ### Mục "Blind spots" là bắt buộc đọc
 
@@ -270,6 +278,9 @@ kết quả:
   gọi nhiều backend, những lời gọi nhắm sang backend khác luôn nằm ở mục này trong entry hiện tại —
   đúng như thiết kế, vì entry này chỉ biết một backend. Chỉ coi là dấu hiệu bất thường khi lời gọi
   đó **đáng lẽ phải thuộc** backend đang xét.
+- **`(matched by route suffix only)`** nghĩa là URL phía FE bắt đầu bằng biến base URL mà tool
+  không đọc được, nên phần đầu route (như `api/`) là đoán. Coi nó là suy diễn, giống
+  `(ambiguous match)`, và nói rõ khi dùng nó làm bằng chứng.
 - **Cùng một thư mục FE có thể xuất hiện ở nhiều entry** (mỗi entry ghép nó với một backend khác).
   Chọn `--project` theo **backend** đang được hỏi, không theo FE. Chọn nhầm entry thì cùng một câu
   hỏi vẫn chạy được và vẫn ra kết quả, chỉ là kết quả của cặp khác — kiểm `solution` trong entry
@@ -278,7 +289,9 @@ kết quả:
 ### Banner staleness ở đầu mỗi file
 
 Mỗi report ghi index quét lúc nào và lệch bao nhiêu commit so với HEAD. Nếu lệch nhiều và có
-file liên quan đã đổi sau khi quét, nói cho tôi biết trước khi kết luận.
+file liên quan đã đổi sau khi quét, nói cho tôi biết trước khi kết luận. Banner cũng đếm cả file
+đang sửa dở chưa commit (`have uncommitted changes`, hoặc `(N uncommitted)`): index không biết về
+những thay đổi đó, kể cả khi HEAD trùng với lúc quét.
 
 ### Dữ liệu git là lịch sử, không phải cấu trúc
 

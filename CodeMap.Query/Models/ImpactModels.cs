@@ -7,8 +7,10 @@ namespace CodeMap.Query.Models;
 /// over-inference (di-confirmed.json shows a DIFFERENT implementation is the one actually DI-bound at that
 /// call site) — true for every other case, including "we don't know" (no DI info at all), since only a
 /// positively-confirmed wrong answer is worth flagging, not silence.
+/// <paramref name="RouteInferred"/> mirrors <see cref="EntryPoint.RouteInferred"/>: the route came from the
+/// framework's default convention, not from an attribute.
 /// </summary>
-public sealed record ReachedEntryPoint(string Id, string DisplayName, string Type, string? HttpMethod, string? Route, string Project, int Depth, bool IsConfirmedBinding = true);
+public sealed record ReachedEntryPoint(string Id, string DisplayName, string Type, string? HttpMethod, string? Route, string Project, int Depth, bool IsConfirmedBinding = true, bool RouteInferred = false);
 
 /// <summary>A non-entry-point, non-test caller reached by the traversal — only rendered when --full is passed (spec section 7, "chống nổ report"). See ReachedEntryPoint for IsConfirmedBinding.</summary>
 public sealed record CallerNode(string Id, string DisplayName, string Project, int Depth, bool IsConfirmedBinding = true);
@@ -27,11 +29,24 @@ public sealed class ImpactResult
     public required string DisplayName { get; init; }
     public string? File { get; init; }
     public int? Line { get; init; }
+    /// <summary>Distinct methods with at least one call or construction edge straight into <see cref="SymbolId"/>, by caller, not by edge: three call sites in one method are one caller, and field reads/writes, inherits/implements edges and the symbol calling itself are not counted.</summary>
     public required int DirectFanIn { get; init; }
+
+    /// <summary>Of <see cref="DirectFanIn"/>, how many reach the symbol ONLY through an interface or MediatR expansion (every edge from that caller carries a Via) — inferred, not written in the caller's code.</summary>
+    public int DirectCallersInferred { get; init; }
     public required int DepthScanned { get; init; }
+
+    /// <summary>Judged on confirmed entry points only (<see cref="ReachedEntryPoint.IsConfirmedBinding"/>); ones reachable solely through an implementation DI does not bind are listed but do not make a hub.</summary>
     public required bool IsHub { get; init; }
+
+    /// <summary>Scored on confirmed entry points and confirmed interface hops; see <see cref="ViaInterfaceUnconfirmedCount"/> for what was left out.</summary>
     public required int RiskScore { get; init; }
+
+    /// <summary>Every interface-expanded edge the traversal used, confirmed or not.</summary>
     public required int ViaInterfaceCount { get; init; }
+
+    /// <summary>Of <see cref="ViaInterfaceCount"/>, edges into an implementation di-confirmed.json shows is not the one DI-bound at that call site.</summary>
+    public int ViaInterfaceUnconfirmedCount { get; init; }
     public required int ViaMediatrCount { get; init; }
     public required List<ReachedEntryPoint> EntryPoints { get; init; }
     public required List<ReachedScreen> Screens { get; init; }

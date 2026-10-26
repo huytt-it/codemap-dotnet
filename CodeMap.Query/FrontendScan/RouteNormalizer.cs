@@ -9,9 +9,12 @@ namespace CodeMap.Query.FrontendScan;
 /// </summary>
 public static partial class RouteNormalizer
 {
+    /// <summary>What a route parameter / interpolated hole normalizes to, on both the backend and the frontend side.</summary>
+    internal const string Wildcard = "{*}";
+
     public static string NormalizeBackendRoute(string route)
     {
-        var withoutParams = RouteParamPattern().Replace(route, "{*}");
+        var withoutParams = RouteParamPattern().Replace(route, Wildcard);
         return NormalizeCommon(withoutParams);
     }
 
