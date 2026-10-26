@@ -10,16 +10,20 @@ internal sealed class MapGenerator
     private readonly List<EdgeRecord> _edges;
     private readonly DiagnosticsModel? _diagnostics;
     private readonly MetaModel? _meta;
+    private readonly string? _repoRoot;
     private readonly List<EntryPoint> _entryPoints;
     private readonly Dictionary<string, SymbolRecord> _byId;
     private readonly Dictionary<string, List<string>> _featuresByEntryPointId;
 
     public IReadOnlyList<string> Projects { get; }
 
+    /// <param name="repoRoot">Repo the staleness banner runs git in; null falls back to the process's working directory (bare `--index`).</param>
     public MapGenerator(
         List<SymbolRecord> symbols, List<EdgeRecord> edges, DiagnosticsModel? diagnostics, MetaModel? meta = null,
-        List<EntryPoint>? entryPoints = null, List<FrontendCall>? frontendCalls = null, List<ApiLink>? apiLinks = null)
+        List<EntryPoint>? entryPoints = null, List<FrontendCall>? frontendCalls = null, List<ApiLink>? apiLinks = null,
+        string? repoRoot = null)
     {
+        _repoRoot = repoRoot;
         _symbols = symbols;
         _edges = edges;
         _diagnostics = diagnostics;
@@ -51,7 +55,7 @@ internal sealed class MapGenerator
     public string BuildMapMarkdown(string? preservedHumanBlock)
     {
         var sb = new StringBuilder();
-        sb.Append(StalenessBanner.Render(_meta));
+        sb.Append(StalenessBanner.Render(_meta, cwdOverride: _repoRoot));
         sb.AppendLine();
         sb.AppendLine("# CODEMAP");
         sb.AppendLine();
@@ -88,7 +92,7 @@ internal sealed class MapGenerator
     public string BuildModuleMarkdown(string project, string? preservedHumanBlock)
     {
         var sb = new StringBuilder();
-        sb.Append(StalenessBanner.Render(_meta));
+        sb.Append(StalenessBanner.Render(_meta, cwdOverride: _repoRoot));
         sb.AppendLine();
         sb.AppendLine($"# Module: {project}");
         sb.AppendLine();

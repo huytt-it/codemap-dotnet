@@ -10,7 +10,8 @@ internal static class MapCommand
     public static int Run(string[] rawArgs)
     {
         var args = Args.Parse(rawArgs, options: IndexPathResolver.OptionNames.Concat(new[] { "out" }).ToArray(), flags: Array.Empty<string>());
-        var indexDir = IndexPathResolver.Resolve(args);
+        var location = IndexPathResolver.ResolveLocation(args);
+        var indexDir = location.IndexDir;
         var outDir = Path.GetFullPath(args.Require("out"));
 
         var symbolsPath = Path.Combine(indexDir, "symbols.jsonl");
@@ -35,7 +36,7 @@ internal static class MapCommand
         var frontendCalls = File.Exists(frontendCallsPath) ? JsonlReader.Read<FrontendCall>(frontendCallsPath) : null;
         var apiLinks = File.Exists(apiLinksPath) ? JsonlReader.Read<ApiLink>(apiLinksPath) : null;
 
-        var generator = new MapGenerator(symbols, edges, diagnostics, meta, entryPoints, frontendCalls, apiLinks);
+        var generator = new MapGenerator(symbols, edges, diagnostics, meta, entryPoints, frontendCalls, apiLinks, location.RepoRoot);
 
         Directory.CreateDirectory(outDir);
         var modulesDir = Path.Combine(outDir, "modules");

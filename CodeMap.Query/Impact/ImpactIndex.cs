@@ -28,8 +28,9 @@ public sealed class ImpactIndex
     /// <summary>Symbols grouped by declaring file. Lazy and cached rather than a required init property: it's
     /// built from SymbolsById on first use (whichever query needs it first — currently WhereEngine.ScoreTickets),
     /// so every other caller (including tests that build an ImpactIndex by hand) doesn't have to populate a
-    /// property it never reads. Ordinal, matching how every other file-keyed lookup in this index compares.</summary>
-    public ILookup<string, SymbolRecord> SymbolsByFile => _symbolsByFile ??= SymbolsById.Values.ToLookup(s => s.File, StringComparer.Ordinal);
+    /// property it never reads. Compared the way the file system compares paths (<see cref="FilePathComparison"/>):
+    /// case-insensitive on Windows, where git and the Roslyn scan can spell the same file differently.</summary>
+    public ILookup<string, SymbolRecord> SymbolsByFile => _symbolsByFile ??= SymbolsById.Values.ToLookup(s => s.File, FilePathComparison.Comparer);
 
     /// <summary>Every via:"interface" edge's call site (From|File|Line) -> the set of containing types the interface-expand pass produced candidates for at that site — reconstructs "which implementations were siblings of this edge" the same way scripts/interface-expansion-audit.ps1 does.</summary>
     public required Dictionary<string, List<string>> InterfaceCallSiteCandidateTypes { get; init; }

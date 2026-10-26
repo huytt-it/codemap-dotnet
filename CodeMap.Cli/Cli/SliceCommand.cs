@@ -15,10 +15,14 @@ internal static class SliceCommand
 {
     public static int Run(string[] rawArgs)
     {
-        var args = Args.Parse(rawArgs, options: IndexPathResolver.OptionNames.Concat(new[] { "symbol", "depth", "out" }).ToArray(), flags: Array.Empty<string>());
-        var indexDir = IndexPathResolver.Resolve(args);
+        var args = Args.Parse(rawArgs, options: IndexPathResolver.OptionNames.Concat(new[] { "symbol", "depth", "out", "max-lines" }).ToArray(), flags: Array.Empty<string>());
+        var location = IndexPathResolver.ResolveLocation(args);
+        var indexDir = location.IndexDir;
         var symbolId = args.Require("symbol");
         var depth = args.GetIntOrDefault("depth", 3);
+        var maxLines = args.GetIntOrDefault("max-lines", LiveCodeLocator.DefaultMaxSnippetLines);
+        if (maxLines < 1)
+            throw new CliUsageException($"--max-lines must be a positive integer, got {maxLines}");
         var outFile = args.GetOrDefault("out");
 
         var symbolsPath = Path.Combine(indexDir, "symbols.jsonl");
@@ -30,8 +34,8 @@ internal static class SliceCommand
 
         var index = ImpactIndex.Load(indexDir);
         var result = ImpactEngine.Traverse(index, symbolId, depth);
-        var currentCode = LocateCurrentCode(index, symbolId);
-        var markdown = EvidenceRenderer.Render(result, index, currentCode, index.Meta);
+        var currentCode = LocateCurrentCode(index, symbolId, location.RepoRoot ?? Environment.CurrentDirectory, maxLines);
+        var markdown = EvidenceRenderer.Render(result, index, currentCode, index.Meta, location.RepoRoot);
 
         if (outFile != null)
         {
@@ -48,20 +52,29 @@ internal static class SliceCommand
 
     /// <summary>
     /// symbols.jsonl's File is relative to the scanned solution's own directory; meta.json's SolutionPath is
-    /// relative to the git repo root. Combined, resolving against the current working directory matches the same
-    /// "run this from inside the target repo" convention the staleness banner already relies on.
+    /// relative to the git repo root. Joined onto <paramref name="repoRoot"/> they give the file on disk. For a
+    /// registered project the root comes from the registry; for a bare `--index` it is the working directory,
+    /// the same "run this from inside the target repo" convention as before.
+    ///
+    /// A path that resolves outside <paramref name="repoRoot"/> is never read: the index is a file anyone can
+    /// have edited or swapped, and the MCP server this feeds hands the result to a model.
     /// </summary>
-    private static LiveCode LocateCurrentCode(ImpactIndex index, string symbolId)
+    internal static LiveCode LocateCurrentCode(ImpactIndex index, string symbolId, string repoRoot, int maxLines = LiveCodeLocator.DefaultMaxSnippetLines)
     {
         if (!index.SymbolsById.TryGetValue(symbolId, out var symbol))
-            return new LiveCode(false, null, null, null);
+            return new LiveCode(false, null, null, null, LiveCodeMiss.SymbolNotInIndex);
 
         var solutionDir = index.Meta?.SolutionPath is { } solutionPath ? Path.GetDirectoryName(solutionPath) ?? "" : "";
-        var absolutePath = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, solutionDir, symbol.File));
+        var absolutePath = Path.GetFullPath(Path.Combine(repoRoot, solutionDir, symbol.File));
+        if (!FilePathComparison.IsInside(repoRoot, absolutePath))
+            return new LiveCode(false, symbol.File, null, null, LiveCodeMiss.OutsideRepo, absolutePath);
 
-        var located = LiveCodeLocator.Locate(absolutePath, symbol);
+        if (!File.Exists(absolutePath))
+            return new LiveCode(false, symbol.File, null, null, LiveCodeMiss.FileMissing, absolutePath);
+
+        var located = LiveCodeLocator.Locate(absolutePath, symbol, maxLines);
         return located == null
-            ? new LiveCode(false, symbol.File, null, null)
-            : new LiveCode(true, symbol.File, located.Line, located.Snippet);
+            ? new LiveCode(false, symbol.File, null, null, LiveCodeMiss.SymbolNotLocated, absolutePath)
+            : new LiveCode(true, symbol.File, located.Line, located.Snippet, IsFuzzyMatch: located.IsFuzzyMatch, FuzzyCandidates: located.FuzzyCandidateCount);
     }
 }
