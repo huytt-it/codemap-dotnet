@@ -50,9 +50,50 @@ internal static class ProjectsCommand
             if (entry.CommitLanguage != null) Console.WriteLine($"    commit language: {entry.CommitLanguage}");
             Console.WriteLine($"    index    : {indexDir}");
             Console.WriteLine($"    status   : {DescribeIndex(indexDir)}");
+            if (Directory.Exists(indexDir)) Console.WriteLine($"    sync     : {DescribeSync(indexDir)}");
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Whether the index came out of a finished `codemap sync`. `scan` run by hand writes no sync-complete.json, and
+    /// writes meta.json first and the rest later — so an index without the marker may be fine, may be half-built,
+    /// and looks identical either way until something asks for the file that never got written.
+    /// </summary>
+    private static string DescribeSync(string indexDir)
+    {
+        var marker = SyncMarker.TryRead(indexDir, out var problem);
+        if (problem != null) return $"{problem} — re-run sync";
+        if (marker == null)
+            return $"no {SyncMarker.FileName} — not produced by `codemap sync`, or the sync never finished; run `codemap sync --project <name>` for a verified index";
+
+        var notable = marker.Steps
+            .Where(s => s.Status is SyncStepResult.Partial or SyncStepResult.Failed)
+            .Select(s => $"{s.Name} {s.Status}")
+            .ToList();
+        var steps = notable.Count > 0 ? $" ({string.Join(", ", notable)})" : "";
+
+        var metaIndexedAt = ReadMetaIndexedAt(indexDir);
+        if (marker.MetaIndexedAt != null && metaIndexedAt != null
+            && !string.Equals(marker.MetaIndexedAt, metaIndexedAt, StringComparison.Ordinal))
+            return $"index changed since the last sync (meta.json scanned {metaIndexedAt}, sync saw {marker.MetaIndexedAt}) — " +
+                   "`scan` run by hand? re-run sync";
+
+        return $"complete, {marker.CompletedAt}{steps}";
+    }
+
+    private static string? ReadMetaIndexedAt(string indexDir)
+    {
+        try
+        {
+            var metaPath = Path.Combine(indexDir, "meta.json");
+            return File.Exists(metaPath) ? JsonUtil.ReadFile<MetaModel>(metaPath)?.IndexedAt : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string DescribeIndex(string indexDir)

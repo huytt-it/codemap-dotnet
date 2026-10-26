@@ -31,6 +31,13 @@ internal static class ScanGitCommand
     private const int MinCoChangeTogether = 3;
     private const int TicketPatternProbeCommitCount = 200;
 
+    /// <summary>
+    /// Returned when co-change.jsonl was written but ticket-files.jsonl was not, because the ticket pattern
+    /// matched nothing. Not 0 — half the output is missing and the caller must hear about it — and not 1, which
+    /// means nothing was written at all: `sync` keeps the co-change data of a run that exits with this.
+    /// </summary>
+    public const int TicketsRefusedExitCode = 2;
+
     public static int Run(string[] rawArgs)
     {
         var args = Args.Parse(rawArgs, options: new[] { "repo", "out", "since" }, flags: Array.Empty<string>());
@@ -75,16 +82,12 @@ internal static class ScanGitCommand
         var ticketPattern = new Regex(config.EffectiveTicketPattern);
 
         // Spec: if the pattern matches nothing in the first 200 commits, this repo's commit convention almost
-        // certainly differs from the default — stop and ask for codemap.config.json instead of writing an empty file.
+        // certainly differs from the default — refuse to write an empty ticket-files.jsonl and ask for
+        // codemap.config.json instead. That refusal covers the ticket half only: co-change is computed from file
+        // lists alone, so it is still worth writing, and `sync` runs this step as optional — returning here before
+        // co-change would lose it without a word.
         var probe = commits.Take(TicketPatternProbeCommitCount).ToList();
-        if (!probe.Any(c => ticketPattern.IsMatch(c.Message)))
-        {
-            Console.Error.WriteLine(
-                $"No ticket ID matched in the first {probe.Count} commit(s) using pattern '{config.EffectiveTicketPattern}'. " +
-                $"This repo's commit convention likely differs from the default — set \"ticketPattern\" in {CodeMapConfig.FileName}. " +
-                "Refusing to write an empty ticket-files.jsonl.");
-            return 1;
-        }
+        var ticketPatternMatchesNothing = !probe.Any(c => TicketExtractor.FindTicketIds(c, ticketPattern).Count > 0);
 
         var indexDir = Path.Combine(outDir, "index");
         Directory.CreateDirectory(indexDir);
@@ -100,11 +103,22 @@ internal static class ScanGitCommand
             Console.WriteLine($"Solution is at '{solutionPrefix}/' inside the repo — rebasing git paths onto it.");
         }
 
-        var tickets = TicketExtractor.Extract(commits, ticketPattern, NoiseFileThreshold, AllowedExtensions);
         var coChanges = CoChangeCalculator.Compute(commits, NoiseFileThreshold, AllowedExtensions, MinCoChangeTogether);
-
-        JsonlWriter.Write(Path.Combine(indexDir, "ticket-files.jsonl"), tickets);
         JsonlWriter.Write(Path.Combine(indexDir, "co-change.jsonl"), coChanges);
+
+        if (ticketPatternMatchesNothing)
+        {
+            Console.Error.WriteLine(
+                $"No ticket ID matched in the first {probe.Count} commit(s) using pattern '{config.EffectiveTicketPattern}'. " +
+                $"This repo's commit convention likely differs from the default — set \"ticketPattern\" in {CodeMapConfig.FileName}. " +
+                "Refusing to write an empty ticket-files.jsonl.");
+            Console.Error.WriteLine(
+                $"co-change.jsonl was still written: {commits.Count} commit(s) scanned, {coChanges.Count} co-change pair(s) -> {indexDir}");
+            return TicketsRefusedExitCode;
+        }
+
+        var tickets = TicketExtractor.Extract(commits, ticketPattern, NoiseFileThreshold, AllowedExtensions);
+        JsonlWriter.Write(Path.Combine(indexDir, "ticket-files.jsonl"), tickets);
 
         Console.WriteLine(
             $"scan-git done: {commits.Count} commit(s) scanned, {tickets.Count} ticket(s), {coChanges.Count} co-change pair(s).");
