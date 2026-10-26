@@ -15,11 +15,14 @@ internal static class SliceCommand
 {
     public static int Run(string[] rawArgs)
     {
-        var args = Args.Parse(rawArgs, options: IndexPathResolver.OptionNames.Concat(new[] { "symbol", "depth", "out" }).ToArray(), flags: Array.Empty<string>());
+        var args = Args.Parse(rawArgs, options: IndexPathResolver.OptionNames.Concat(new[] { "symbol", "depth", "out", "max-lines" }).ToArray(), flags: Array.Empty<string>());
         var location = IndexPathResolver.ResolveLocation(args);
         var indexDir = location.IndexDir;
         var symbolId = args.Require("symbol");
         var depth = args.GetIntOrDefault("depth", 3);
+        var maxLines = args.GetIntOrDefault("max-lines", LiveCodeLocator.DefaultMaxSnippetLines);
+        if (maxLines < 1)
+            throw new CliUsageException($"--max-lines must be a positive integer, got {maxLines}");
         var outFile = args.GetOrDefault("out");
 
         var symbolsPath = Path.Combine(indexDir, "symbols.jsonl");
@@ -31,7 +34,7 @@ internal static class SliceCommand
 
         var index = ImpactIndex.Load(indexDir);
         var result = ImpactEngine.Traverse(index, symbolId, depth);
-        var currentCode = LocateCurrentCode(index, symbolId, location.RepoRoot ?? Environment.CurrentDirectory);
+        var currentCode = LocateCurrentCode(index, symbolId, location.RepoRoot ?? Environment.CurrentDirectory, maxLines);
         var markdown = EvidenceRenderer.Render(result, index, currentCode, index.Meta, location.RepoRoot);
 
         if (outFile != null)
@@ -56,7 +59,7 @@ internal static class SliceCommand
     /// A path that resolves outside <paramref name="repoRoot"/> is never read: the index is a file anyone can
     /// have edited or swapped, and the MCP server this feeds hands the result to a model.
     /// </summary>
-    internal static LiveCode LocateCurrentCode(ImpactIndex index, string symbolId, string repoRoot)
+    internal static LiveCode LocateCurrentCode(ImpactIndex index, string symbolId, string repoRoot, int maxLines = LiveCodeLocator.DefaultMaxSnippetLines)
     {
         if (!index.SymbolsById.TryGetValue(symbolId, out var symbol))
             return new LiveCode(false, null, null, null, LiveCodeMiss.SymbolNotInIndex);
@@ -69,9 +72,9 @@ internal static class SliceCommand
         if (!File.Exists(absolutePath))
             return new LiveCode(false, symbol.File, null, null, LiveCodeMiss.FileMissing, absolutePath);
 
-        var located = LiveCodeLocator.Locate(absolutePath, symbol);
+        var located = LiveCodeLocator.Locate(absolutePath, symbol, maxLines);
         return located == null
             ? new LiveCode(false, symbol.File, null, null, LiveCodeMiss.SymbolNotLocated, absolutePath)
-            : new LiveCode(true, symbol.File, located.Line, located.Snippet);
+            : new LiveCode(true, symbol.File, located.Line, located.Snippet, IsFuzzyMatch: located.IsFuzzyMatch, FuzzyCandidates: located.FuzzyCandidateCount);
     }
 }

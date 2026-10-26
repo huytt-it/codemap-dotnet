@@ -91,6 +91,10 @@ internal sealed record RegisteredProject(string ConfigPath, string Repo, string 
         return new RegisteredProject(configPath, Path.GetFullPath(repo), Path.GetFullPath(indexDir), Path.GetFullPath(Path.Combine(repo, solutionDir)));
     }
 
+    /// <summary>Adds a symbol (as built by <see cref="Symbol"/>) to the index after the fact.</summary>
+    public void AppendSymbol(object symbol)
+        => File.AppendAllLines(Path.Combine(IndexDir, "symbols.jsonl"), new[] { JsonSerializer.Serialize(symbol) });
+
     public delegate int CommandRun(string[] args);
 
     /// <summary>Runs a real command with the process cwd set to <paramref name="cwd"/>, writing through --out so nothing depends on capturing the console.</summary>

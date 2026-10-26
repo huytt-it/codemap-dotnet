@@ -43,6 +43,7 @@ public static class EvidenceRenderer
         else
         {
             sb.AppendLine($"### {code.File}:{code.Line}");
+            if (code.IsFuzzyMatch) sb.AppendLine(FuzzyNote(code));
             sb.AppendLine("```csharp");
             sb.AppendLine(code.Snippet);
             sb.AppendLine("```");
@@ -76,6 +77,17 @@ public static class EvidenceRenderer
             $"_`{code.File ?? "(unknown file)"}` exists, but the symbol could not be found in it. It may have been renamed or removed " +
             "since the last scan — run `codemap find` to look up its current docId, or `codemap sync` to refresh the index._",
     };
+
+    /// <summary>
+    /// The live file is parsed on its own, so a parameter type declared in another file cannot be resolved and the
+    /// exact docId the scan recorded cannot be reproduced; the declaration is then found by name. Said out loud,
+    /// because with overloads that is a guess.
+    /// </summary>
+    private static string FuzzyNote(LiveCode code) => code.FuzzyCandidates > 1
+        ? $"_Matched by name and containing type only: {code.FuzzyCandidates} declarations here share that name (overloads) and the exact " +
+          "signature could not be reproduced. Showing the one closest to the line the scan recorded — it may be the wrong overload._"
+        : "_Matched by name and containing type only: the exact signature could not be reproduced (this file is parsed on its own, so a " +
+          "parameter type declared in another file cannot be resolved). Check this is the member you meant._";
 
     private static void AppendPath(StringBuilder sb, ImpactResult result)
     {
@@ -225,5 +237,9 @@ public enum LiveCodeMiss
 /// Pre-fetched live-code lookup result, handed in by the CLI layer (which owns the Roslyn reference EvidenceRenderer can't have — spec section 2).
 /// <paramref name="Miss"/> and <paramref name="TriedPath"/> say why and where when <paramref name="Found"/> is false;
 /// <c>TriedPath</c> is the absolute path that was (or, for OutsideRepo, would have been) read.
+/// <paramref name="IsFuzzyMatch"/>: the declaration was found by name and containing type, not by exact docId;
+/// <paramref name="FuzzyCandidates"/> is how many declarations matched that way (more than one: overloads).
 /// </summary>
-public sealed record LiveCode(bool Found, string? File, int? Line, string? Snippet, LiveCodeMiss Miss = LiveCodeMiss.None, string? TriedPath = null);
+public sealed record LiveCode(
+    bool Found, string? File, int? Line, string? Snippet, LiveCodeMiss Miss = LiveCodeMiss.None, string? TriedPath = null,
+    bool IsFuzzyMatch = false, int FuzzyCandidates = 0);
