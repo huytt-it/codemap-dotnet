@@ -445,10 +445,17 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     /// as (docId of the request/notification type argument, docId of the Handle method that handles it). One class
     /// may handle several requests, one Handle overload each; before, only the first interface counted, mapped to
     /// the first method named Handle.
+    /// Without a MediatR reference (L1, an unrestored L2) `class H : IRequestHandler&lt;GetX, int&gt;` doesn't resolve,
+    /// and Roslyn puts an unresolved type written FIRST in a class's base list in BaseType (it might be a class),
+    /// not in AllInterfaces — so those are looked at too, the same by-name match as for a resolved interface.
     /// </summary>
     private static IEnumerable<(string RequestTypeId, string HandleId)> MediatrHandlersOf(INamedTypeSymbol type)
     {
-        foreach (var iface in type.AllInterfaces)
+        var unresolvedBases = new List<INamedTypeSymbol>();
+        for (var t = type.BaseType; t != null; t = t.BaseType)
+            if (t.TypeKind == TypeKind.Error) unresolvedBases.Add(t);
+
+        foreach (var iface in type.AllInterfaces.Concat(unresolvedBases))
         {
             var isRequestHandler = iface.Name == "IRequestHandler" && iface.TypeArguments.Length is 1 or 2;
             var isNotificationHandler = iface.Name == "INotificationHandler" && iface.TypeArguments.Length == 1;

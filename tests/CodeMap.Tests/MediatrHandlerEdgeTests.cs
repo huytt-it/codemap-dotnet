@@ -1,3 +1,4 @@
+using CodeMap.Query.Models;
 using CodeMap.Roslyn.Scan;
 
 namespace CodeMap.Tests;
@@ -70,5 +71,57 @@ public class MediatrHandlerEdgeTests
         CollectionAssert.AreEquivalent(
             new[] { "M:M.SendEmail.Handle(M.OrderPlaced)", "M:M.UpdateStock.Handle(M.OrderPlaced)", "M:M.AbHandler.Handle(M.GetA)", "M:M.AbHandler.Handle(M.GetB)" },
             handlers);
+    }
+
+    // L1 (and an unrestored L2) has no MediatR reference: `: IRequestHandler<GetMyOrders, int>` is an error type,
+    // which Roslyn puts in BaseType (first in the base list of a class), not in AllInterfaces. eShopOnWeb's two
+    // handlers were missed this way at both levels.
+    private const string UnresolvedSource = """
+        using System.Threading;
+        using System.Threading.Tasks;
+        using MediatR;
+
+        namespace U;
+
+        public class GetMyOrders : IRequest<int> { }
+        public class GetMyOrdersHandler : IRequestHandler<GetMyOrders, int>
+        {
+            public Task<int> Handle(GetMyOrders request, CancellationToken cancellationToken) => Task.FromResult(1);
+        }
+
+        public class OrderPlaced : INotification { }
+        public class AuditHandler : INotificationHandler<OrderPlaced>, System.IDisposable
+        {
+            public Task Handle(OrderPlaced notification, CancellationToken cancellationToken) => Task.CompletedTask;
+            public void Dispose() { }
+        }
+
+        public abstract class HandlerBase { }
+        public class GetTotal : IRequest<int> { }
+        public class GetTotalHandler : HandlerBase, IRequestHandler<GetTotal, int>
+        {
+            public Task<int> Handle(GetTotal request, CancellationToken cancellationToken) => Task.FromResult(0);
+        }
+
+        public class OrderController
+        {
+            private readonly IMediator _mediator = null!;
+            public Task<int> MyOrders() => _mediator.Send(new GetMyOrders());
+            public Task Place() => _mediator.Publish(new OrderPlaced());
+            public Task<int> Total() => _mediator.Send(new GetTotal());
+        }
+        """;
+
+    private static readonly ScanResults UnresolvedResults = InMemoryScan.Run(UnresolvedSource);
+
+    [DataTestMethod]
+    [DataRow("M:U.OrderController.MyOrders", "M:U.GetMyOrdersHandler.Handle(U.GetMyOrders,System.Threading.CancellationToken)")]
+    [DataRow("M:U.OrderController.Place", "M:U.AuditHandler.Handle(U.OrderPlaced,System.Threading.CancellationToken)")]
+    [DataRow("M:U.OrderController.Total", "M:U.GetTotalHandler.Handle(U.GetTotal,System.Threading.CancellationToken)")]
+    public void Handler_whose_MediatR_interface_does_not_resolve_is_still_reached(string from, string handle)
+    {
+        var edge = TestAssert.Single(UnresolvedResults.Edges, e => e.From == from && e.Via == "mediatr");
+        Assert.AreEqual(handle, edge.To);
+        TestAssert.Contains(UnresolvedResults.EntryPoints, e => e.Type == "handler" && e.Id == handle);
     }
 }
