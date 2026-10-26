@@ -57,14 +57,14 @@ public class SyntaxSymbolWalkerTests
         Assert.AreEqual("M:N.E.Ext(System.String,System.Int32)", edge.To);
     }
 
-    private static SyntaxSymbolWalker Walk(string source, bool emitDataFlowEdges = true)
+    private static SyntaxSymbolWalker Walk(string source)
     {
         var tree = CSharpSyntaxTree.ParseText(source, path: "Test.cs");
         var compilation = CSharpCompilation.Create(
             "WalkerTest", new[] { tree }, BclReferenceProvider.GetReferences(),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        var walker = new SyntaxSymbolWalker(compilation.GetSemanticModel(tree), "Test", "Test.cs", includeExternal: false, emitDataFlowEdges);
+        var walker = new SyntaxSymbolWalker(compilation.GetSemanticModel(tree), "Test", "Test.cs", includeExternal: false);
         walker.Visit(tree.GetRoot());
         return walker;
     }

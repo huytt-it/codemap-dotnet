@@ -6,9 +6,10 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace CodeMap.Roslyn.Scan;
 
 /// <summary>
-/// Walks one syntax tree, producing a SymbolRecord for each type/member and edges for inherits/implements
-/// (always) plus call/new/read/write and interface/DI mapping data (only when <paramref name="emitDataFlowEdges"/>
-/// is true — L2 mode, a real compilation with real references).
+/// Walks one syntax tree, producing a SymbolRecord for each type/member, edges for inherits/implements and
+/// call/new/read/write, entry points, and the interface/DI/MediatR mapping data the solution-wide passes in
+/// ScanResults consume. Same output at every level: an L1 compilation binds calls between the solution's own
+/// types just as well as L2 does; it only misses what needs a NuGet type to resolve.
 ///
 /// L1 gets its semantic model from a compilation shared across the WHOLE solution (all projects merged, see
 /// SyntaxOnlyScanner), so a base type declared in another project still resolves correctly — no name matching
@@ -26,7 +27,6 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     private readonly string _project;
     private readonly string _file;
     private readonly bool _includeExternal;
-    private readonly bool _emitDataFlowEdges;
     private readonly string? _diAttributeName;
     private readonly Stack<string> _typeStack = new();
     private readonly Stack<string> _typeIdStack = new();
@@ -64,13 +64,12 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     /// <summary>(callSiteMemberDocId, constructedRequestOrNotificationTypeDocId, file, line) — a `mediator.Send(new FooCommand())` / `.Publish(new FooEvent())` call site.</summary>
     public List<(string FromId, string ConstructedTypeId, string File, int Line)> MediatrSendSites { get; } = new();
 
-    public SyntaxSymbolWalker(SemanticModel model, string project, string file, bool includeExternal, bool emitDataFlowEdges, string? diAttributeName = null)
+    public SyntaxSymbolWalker(SemanticModel model, string project, string file, bool includeExternal, string? diAttributeName = null)
     {
         _model = model;
         _project = project;
         _file = file;
         _includeExternal = includeExternal;
-        _emitDataFlowEdges = emitDataFlowEdges;
         _diAttributeName = diAttributeName;
     }
 
@@ -110,7 +109,7 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     public override void VisitMethodDeclaration(MethodDeclarationSyntax node)
     {
         var id = EmitMemberSymbol(node, "Method", node.AttributeLists);
-        if (id != null && _emitDataFlowEdges)
+        if (id != null)
             TryRecordHttpActionEntryPoint(id, node.AttributeLists);
         WithMember(id, () => base.VisitMethodDeclaration(node));
     }
@@ -132,19 +131,15 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
 
     public override void VisitInvocationExpression(InvocationExpressionSyntax node)
     {
-        if (_emitDataFlowEdges)
-        {
-            HandleInvocation(node);
-            TryRecordDiRegistration(node);
-            TryRecordMediatrSend(node);
-        }
-
+        HandleInvocation(node);
+        TryRecordDiRegistration(node);
+        TryRecordMediatrSend(node);
         base.VisitInvocationExpression(node);
     }
 
     public override void VisitObjectCreationExpression(ObjectCreationExpressionSyntax node)
     {
-        if (_emitDataFlowEdges) HandleObjectCreation(node);
+        HandleObjectCreation(node);
         base.VisitObjectCreationExpression(node);
     }
 
@@ -152,13 +147,13 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     // from `new Foo()` — both derive from BaseObjectCreationExpressionSyntax, so HandleObjectCreation handles either.
     public override void VisitImplicitObjectCreationExpression(ImplicitObjectCreationExpressionSyntax node)
     {
-        if (_emitDataFlowEdges) HandleObjectCreation(node);
+        HandleObjectCreation(node);
         base.VisitImplicitObjectCreationExpression(node);
     }
 
     public override void VisitMemberAccessExpression(MemberAccessExpressionSyntax node)
     {
-        if (_emitDataFlowEdges) HandleMemberAccess(node);
+        HandleMemberAccess(node);
         base.VisitMemberAccessExpression(node);
     }
 
@@ -217,7 +212,7 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         }
 
         string? controllerRoute = null;
-        if (symbol != null && _emitDataFlowEdges && kind is "Class" or "Struct" or "Record")
+        if (symbol != null && kind is "Class" or "Struct" or "Record")
         {
             RecordInterfaceMappings(symbol);
             TryRecordAttributeDiBinding(symbol);
