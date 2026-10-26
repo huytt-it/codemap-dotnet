@@ -359,16 +359,12 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
             if (startId != null) EntryPoints.Add(new EntryPoint(startId, "job"));
         }
 
-        var requestTypeId = TryGetMediatrRequestTypeId(type);
-        if (requestTypeId != null)
+        var handleIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (requestTypeId, handleId) in MediatrHandlersOf(type))
         {
-            var handleId = type.GetMembers().OfType<IMethodSymbol>()
-                .FirstOrDefault(m => m.Name == "Handle")?.OriginalDefinition.GetDocumentationCommentId();
-            if (handleId != null)
-            {
+            MediatrHandlerMappings.Add((requestTypeId, handleId));
+            if (handleIds.Add(handleId))
                 EntryPoints.Add(new EntryPoint(handleId, "handler"));
-                MediatrHandlerMappings.Add((requestTypeId, handleId));
-            }
         }
 
         if (ControllerStyleOf(type, classAttrLists) is not { } style) return null;
@@ -444,8 +440,13 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     private static bool ImplementsIHostedService(INamedTypeSymbol type)
         => type.AllInterfaces.Any(i => i.Name == "IHostedService");
 
-    /// <summary>If <paramref name="type"/> implements MediatR's IRequestHandler&lt;,&gt;/IRequestHandler&lt;&gt;/INotificationHandler&lt;&gt;, returns the docId of the request/notification type argument.</summary>
-    private static string? TryGetMediatrRequestTypeId(INamedTypeSymbol type)
+    /// <summary>
+    /// Every MediatR IRequestHandler&lt;,&gt;/IRequestHandler&lt;&gt;/INotificationHandler&lt;&gt; this type implements,
+    /// as (docId of the request/notification type argument, docId of the Handle method that handles it). One class
+    /// may handle several requests, one Handle overload each; before, only the first interface counted, mapped to
+    /// the first method named Handle.
+    /// </summary>
+    private static IEnumerable<(string RequestTypeId, string HandleId)> MediatrHandlersOf(INamedTypeSymbol type)
     {
         foreach (var iface in type.AllInterfaces)
         {
@@ -453,11 +454,24 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
             var isNotificationHandler = iface.Name == "INotificationHandler" && iface.TypeArguments.Length == 1;
             if (!isRequestHandler && !isNotificationHandler) continue;
 
-            var id = iface.TypeArguments[0].OriginalDefinition.GetDocumentationCommentId();
-            if (id != null) return id;
+            var request = iface.TypeArguments[0];
+            var requestId = request.OriginalDefinition.GetDocumentationCommentId();
+            var handleId = HandleMethodFor(type, iface, request)?.OriginalDefinition.GetDocumentationCommentId();
+            if (requestId != null && handleId != null) yield return (requestId, handleId);
         }
+    }
 
-        return null;
+    /// <summary>The method implementing the handler interface's Handle when the interface resolved (L2, or MediatR's
+    /// shapes declared in source); else — an unresolved interface has no members — the type's own Handle whose
+    /// first parameter is the request.</summary>
+    private static IMethodSymbol? HandleMethodFor(INamedTypeSymbol type, INamedTypeSymbol handlerInterface, ITypeSymbol request)
+    {
+        var declared = handlerInterface.GetMembers("Handle").OfType<IMethodSymbol>().FirstOrDefault();
+        if (declared != null && type.FindImplementationForInterfaceMember(declared) is IMethodSymbol implementation)
+            return implementation;
+
+        return type.GetMembers("Handle").OfType<IMethodSymbol>()
+            .FirstOrDefault(m => m.Parameters.Length > 0 && SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, request));
     }
 
     private static readonly Dictionary<string, string> HttpVerbAttributeNames = new(StringComparer.Ordinal)
