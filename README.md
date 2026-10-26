@@ -174,7 +174,7 @@ One command runs `scan` → `scan-git` → `scan-fe` → `link` → `map`, in th
 codemap sync --all
 ```
 
-If `scan` fails, that project's run stops there — a half-built index is worse than none. `scan-git` and `scan-fe` are optional enrichment: a repo with no git history, or no separate frontend, still produces a usable `MAP.md`.
+`sync` builds the new index in a staging directory next to the output and swaps it in only once `scan` and `map` have succeeded, so a failed run leaves the previous index untouched — a half-built index is worse than none. The finished index carries `index/sync-complete.json`, which records when it was built, from which commit, and which steps ran or were skipped. `scan-git` and `scan-fe` are optional enrichment: a repo with no git history, or no separate frontend, still produces a usable `MAP.md`.
 
 ### Step 3 — Check
 
@@ -182,7 +182,7 @@ If `scan` fails, that project's run stops there — a half-built index is worse 
 codemap projects
 ```
 
-Lists every project, its resolved paths, and **index status**: whether it has been built, how many symbols, when it was last scanned, and how many days ago.
+Lists every project, its resolved paths, and **index status**: whether it has been built, how many symbols, when it was last scanned, how many days ago, and whether the index came from a completed `sync`.
 
 ### Day-to-day use
 
@@ -190,7 +190,7 @@ Lists every project, its resolved paths, and **index status**: whether it has be
 codemap where --project shop --query "注文のキャンセル"
 ```
 
-Every query command (`find`, `where`, `impact`, `slice`, `map`, `link`) accepts `--project <name>` in place of a long `--index <path>`.
+Every query command (`find`, `where`, `impact`, `slice`, `map`, `link`) accepts `--project <name>` in place of a long `--index <path>`. With `--project`, `impact`, `slice` and `map` also work against the project's own repository, so the staleness check and the code `slice` reads are right whichever directory you run them from.
 
 ---
 
@@ -200,7 +200,7 @@ Everything still works without creating `codemap.projects.json`.
 
 Assume your repo is at `D:\Repos\MyApp`, with solution `D:\Repos\MyApp\MyApp.sln`.
 
-**Important:** always `cd` into the repo before running a command — the tool uses the current directory to check whether the index is stale.
+**Important:** with `--index`, always `cd` into the repo before running a command — the tool then uses the current directory to check whether the index is stale and, for `slice`, to find the source files. (`--project` does not need this.)
 
 ```bash
 cd D:\Repos\MyApp
@@ -214,7 +214,7 @@ codemap scan --solution MyApp.sln --out D:\CodeMapIndex\MyApp
 
 `--solution` accepts **both `.sln` and `.slnx`** (the XML format the .NET 10 SDK generates by default).
 
-> **If this step fails:** try `dotnet restore` in the repo first. If it still fails, add `--syntax-only` — a shallower scan that does not require the solution to build, at the cost of less detail.
+> **If this step fails:** try `dotnet restore` in the repo first. If it still fails, add `--syntax-only` — a shallower scan that does not require the solution to build. It still records calls, HTTP entry points and DI registrations, but a call into a NuGet or framework type cannot be resolved without the build, so those edges are missing.
 >
 > If the repo has **both `.sln` and `.slnx`** (common mid-migration), a bare `dotnet restore` fails with MSB1011 because it cannot pick one — name it explicitly: `dotnet restore MyApp.sln`.
 
@@ -226,7 +226,9 @@ codemap scan-git --repo . --out D:\CodeMapIndex\MyApp
 
 > **Run this after Step 1, not before.** `git log` reports paths from the repository root, while the scan records them from the solution's directory. When the solution sits deeper in the repo (`src/MyApp.sln`), `scan-git` reads `meta.json` from Step 1 to reconcile the two — without it, no ticket or co-change entry can match a scanned file, which costs `where` its strongest ranking signal. The command says which reconciliation it applied, and warns if nothing matched.
 
-> **If it reports "No ticket ID matched":** your repo names commits differently from the default convention (`#1234`, `TICKET-1234`, `BUG-1234`, `JIRA-1234`). Create a `codemap.config.json` at the repo root — see [Part 5](#part-5--configuration-optional).
+> **If it reports "No ticket ID matched":** your repo names commits differently from the default convention (`#1234`, `TICKET-1234`, `BUG-1234`, `JIRA-1234`). Create a `codemap.config.json` at the repo root — see [Part 5](#part-5--configuration-optional). `scan-git` still writes the co-change data in that case, since it needs no ticket, and exits with code 2; only `ticket-files.jsonl` is skipped.
+
+> Ticket IDs are read from both the subject and the body of each commit, and a commit that mentions several tickets counts for each. Under the default pattern, the pull-request number in a GitHub or Bitbucket merge subject (`Merge pull request #456 from ...`) is not taken as a ticket.
 
 ### Step 3 — Scan the frontend (skip if there is no separate frontend)
 
@@ -239,6 +241,8 @@ codemap link --index D:\CodeMapIndex\MyApp\index
 ```
 
 > **Note:** the frontend directory must already have `npm install` run (needs `node_modules/typescript`). If not, the tool still runs but skips Angular, scanning jQuery only — and says so clearly on screen.
+>
+> jQuery calls are read from `.js` files and from `<script>` blocks in `.cshtml` views; vendored folders (`node_modules`, `dist`, `wwwroot/lib`) are skipped. A URL built with Razor (`@Url.Action(...)`) is listed in `diagnostics.json` rather than guessed.
 
 ### Step 4 — Generate the overview map
 
@@ -270,6 +274,8 @@ codemap impact --index D:\CodeMapIndex\MyApp\index --symbol "M:Orders.OrderServi
 
 Open `impact.md`, or **attach it directly to a Copilot chat** and ask normally.
 
+A few markers say how far to trust a line: `route inferred from convention` (the action has no route attribute, so the default `{controller}/{action}/{id?}` was assumed), `(matched by route suffix only)` (the frontend URL starts with a base-URL variable the scan could not resolve), `(ambiguous match)`, and everything under **Blind spots**. *Direct fan-in* counts distinct calling methods, and the risk score and hub warning count only bindings confirmed by real DI registrations.
+
 ### Scenario B: "The ticket says 'fix order cancellation' — where is that in the code?"
 
 ```bash
@@ -278,13 +284,15 @@ codemap where --index D:\CodeMapIndex\MyApp\index --query "hủy đơn hàng"
 
 Returns a list of candidates **with the reason each was picked**. Take the matching `M:...` identifier and feed it to `impact` as above.
 
+To look up a ticket, write its ID the way commits do — `#4821`, `TICKET-4821`, `SHO-1234`. A bare number in the query (`lỗi 500`, `2026`) is not treated as a ticket ID.
+
 ### Scenario C: "I need the real code, plus the path from the API to here"
 
 ```bash
 codemap slice --index D:\CodeMapIndex\MyApp\index --symbol "M:Orders.OrderService.Cancel(System.Int32)" --out slice.md
 ```
 
-`slice` reads code **directly from disk at run time**, so even if the index was scanned yesterday, the code in the output file is current.
+`slice` reads code **directly from disk at run time**, so even if the index was scanned yesterday, the code in the output file is current. It shows up to 40 lines of the member by default; pass `--max-lines <n>` for more. When the symbol could only be found by name, because its signature changed since the scan, the output says so.
 
 ### `impact` vs. `slice`
 
@@ -308,7 +316,7 @@ current HEAD b7e1d04 · 11 commit(s) behind, 6 relevant file(s) changed since th
 
 Edits you have not committed yet count too: `matches the scan, but 2 relevant file(s) have uncommitted changes`, or `(2 uncommitted)` after the commit count. A file that is only a work in progress and not part of the answer does not make the index look stale.
 
-Once that number grows, scan again: `codemap sync --project <name>` (or `--all`). It overwrites the old output directory safely. Without a config file, repeat the commands in [Part 2b](#part-2b--manual-scanning-without-the-config-file).
+Once that number grows, scan again: `codemap sync --project <name>` (or `--all`). It builds the new index on the side and swaps it in only when it is complete. Without a config file, repeat the commands in [Part 2b](#part-2b--manual-scanning-without-the-config-file).
 
 ### Adding a frontend to a project that was already scanned
 
