@@ -7,8 +7,10 @@ namespace CodeMap.Query.Models;
 /// over-inference (di-confirmed.json shows a DIFFERENT implementation is the one actually DI-bound at that
 /// call site) — true for every other case, including "we don't know" (no DI info at all), since only a
 /// positively-confirmed wrong answer is worth flagging, not silence.
+/// <paramref name="RouteInferred"/> mirrors <see cref="EntryPoint.RouteInferred"/>: the route came from the
+/// framework's default convention, not from an attribute.
 /// </summary>
-public sealed record ReachedEntryPoint(string Id, string DisplayName, string Type, string? HttpMethod, string? Route, string Project, int Depth, bool IsConfirmedBinding = true);
+public sealed record ReachedEntryPoint(string Id, string DisplayName, string Type, string? HttpMethod, string? Route, string Project, int Depth, bool IsConfirmedBinding = true, bool RouteInferred = false);
 
 /// <summary>A non-entry-point, non-test caller reached by the traversal — only rendered when --full is passed (spec section 7, "chống nổ report"). See ReachedEntryPoint for IsConfirmedBinding.</summary>
 public sealed record CallerNode(string Id, string DisplayName, string Project, int Depth, bool IsConfirmedBinding = true);

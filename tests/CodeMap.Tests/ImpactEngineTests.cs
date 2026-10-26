@@ -359,12 +359,43 @@ public class ImpactEngineTests
         Assert.IsTrue(result.BlindSpots.Any(b => b.Contains("low-confidence", StringComparison.OrdinalIgnoreCase)));
     }
 
+    [TestMethod]
+    public void Suffix_matched_screen_adds_a_blind_spot_note()
+    {
+        var index = BuildIndex(
+            symbols: new[] { "T:A", "T:Ctrl" },
+            edges: new[] { ("T:Ctrl", "T:A") },
+            entryPoints: new[] { "T:Ctrl" },
+            entryPointType: "http",
+            frontendCalls: new[] { new FrontendCall("fe:x.ts:1", "x.ts", 1, "GET", "`${base}/a`", "a", "orders", "high", new(), BaseUrlDropped: true) },
+            apiLinks: new[] { new ApiLink("fe:x.ts:1", "T:Ctrl", "suffix") });
+
+        var result = ImpactEngine.Traverse(index, "T:A", depth: 5);
+
+        Assert.IsTrue(result.BlindSpots.Any(b => b.Contains("route suffix", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod] // scan marks a route it derived from {controller}/{action}/{id?}; impact has to carry that doubt to the reader
+    public void Entry_point_with_an_inferred_route_is_flagged_and_noted_as_a_blind_spot()
+    {
+        var index = BuildIndex(
+            symbols: new[] { "T:A", "T:Ctrl" },
+            edges: new[] { ("T:Ctrl", "T:A") },
+            entryPoints: new[] { "T:Ctrl" },
+            entryPointFor: id => new EntryPoint(id, "http", "ANY", "orders/index/{id?}", RouteInferred: true));
+
+        var result = ImpactEngine.Traverse(index, "T:A", depth: 5);
+
+        Assert.IsTrue(result.EntryPoints.Single().RouteInferred);
+        Assert.IsTrue(result.BlindSpots.Any(b => b.Contains("inferred", StringComparison.OrdinalIgnoreCase)));
+    }
+
     private static ImpactIndex BuildIndex(
         IEnumerable<string> symbols, IEnumerable<(string From, string To)> edges, IEnumerable<string> entryPoints,
         Dictionary<string, string>? projectOverrides = null, string entryPointType = "handler",
         IEnumerable<FrontendCall>? frontendCalls = null, IEnumerable<ApiLink>? apiLinks = null,
         IEnumerable<TicketFileRecord>? tickets = null, IEnumerable<CoChangeRecord>? coChanges = null,
-        IEnumerable<EdgeRecord>? extraEdges = null)
+        IEnumerable<EdgeRecord>? extraEdges = null, Func<string, EntryPoint>? entryPointFor = null)
     {
         var symbolsById = symbols.ToDictionary(
             id => id,
@@ -386,7 +417,7 @@ public class ImpactEngineTests
         {
             SymbolsById = symbolsById,
             ReverseEdges = edgeRecords.GroupBy(e => e.To, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal),
-            EntryPointsById = entryPoints.ToDictionary(id => id, id => new EntryPoint(id, entryPointType), StringComparer.Ordinal),
+            EntryPointsById = entryPoints.ToDictionary(id => id, id => entryPointFor?.Invoke(id) ?? new EntryPoint(id, entryPointType), StringComparer.Ordinal),
             Tickets = (tickets ?? Enumerable.Empty<TicketFileRecord>()).ToList(),
             CoChanges = (coChanges ?? Enumerable.Empty<CoChangeRecord>()).ToList(),
             FrontendCallsById = (frontendCalls ?? Enumerable.Empty<FrontendCall>()).ToDictionary(c => c.Id, StringComparer.Ordinal),

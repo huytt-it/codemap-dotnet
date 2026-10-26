@@ -58,7 +58,7 @@ public static class ImpactEngine
 
             var isConfirmed = !unconfirmedBinding.Contains(id);
             if (index.EntryPointsById.TryGetValue(id, out var ep))
-                entryPoints.Add(new ReachedEntryPoint(id, displayName, ep.Type, ep.HttpMethod, ep.Route, project, d, isConfirmed));
+                entryPoints.Add(new ReachedEntryPoint(id, displayName, ep.Type, ep.HttpMethod, ep.Route, project, d, isConfirmed, ep.RouteInferred == true));
             else if (TestProjectName.IsTestProject(project))
                 testsReached.Add(displayName);
             else
@@ -89,7 +89,9 @@ public static class ImpactEngine
 
         var screens = BuildScreens(index, entryPoints);
 
-        var blindSpots = BuildBlindSpots(index, visitedDepth.Keys, rootSymbol, viaMediatrCount, viaInterfaceCount, viaInterfaceUnconfirmedCount, screens);
+        var blindSpots = BuildBlindSpots(
+            index, visitedDepth.Keys, rootSymbol, viaMediatrCount, viaInterfaceCount, viaInterfaceUnconfirmedCount, screens,
+            inferredRouteCount: entryPoints.Count(e => e.RouteInferred));
 
         var riskScore = ComputeRiskScore(confirmedEntryPoints.Count, testsReached.Count, viaInterfaceCount - viaInterfaceUnconfirmedCount);
 
@@ -241,7 +243,7 @@ public static class ImpactEngine
 
     private static List<string> BuildBlindSpots(
         ImpactIndex index, IEnumerable<string> reachedIds, SymbolRecord? rootSymbol, int mediatrCount, int interfaceCount,
-        int unconfirmedInterfaceCount, List<ReachedScreen> screens)
+        int unconfirmedInterfaceCount, List<ReachedScreen> screens, int inferredRouteCount)
     {
         var spots = new List<string>();
 
@@ -251,6 +253,11 @@ public static class ImpactEngine
         var ambiguousScreens = screens.Count(s => s.MatchKind == "ambiguous");
         if (ambiguousScreens > 0)
             spots.Add($"{ambiguousScreens} FE screen link(s) are ambiguous — the normalized route matched more than one backend endpoint.");
+        var suffixScreens = screens.Count(s => s.MatchKind == "suffix");
+        if (suffixScreens > 0)
+            spots.Add($"{suffixScreens} FE screen link(s) matched by route suffix only — the frontend URL starts with a base-URL variable the scan could not resolve, so the missing prefix (such as api/) was assumed.");
+        if (inferredRouteCount > 0)
+            spots.Add($"{inferredRouteCount} HTTP entry point(s) have a route inferred from the default convention ({{controller}}/{{action}}/{{id?}}), not declared by an attribute — the app's real route table may differ, and FE links to them rest on the same guess.");
 
         if (rootSymbol == null)
             spots.Add("This symbol was not found in symbols.jsonl — the docId may be stale (re-run `codemap find`), or the index is out of date.");

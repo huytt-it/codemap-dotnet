@@ -134,10 +134,11 @@ public static class CompactRenderer
             foreach (var ep in group.OrderBy(e => e.Depth).ThenBy(e => e.DisplayName, StringComparer.Ordinal))
             {
                 var kindLabel = $"[{ep.Type}]";
-                var routeText = ep.HttpMethod != null ? $"{ep.HttpMethod,-6} {ep.Route}" : null;
+                var routeText = ep.HttpMethod != null ? $"{ep.HttpMethod,-6} {ep.Route ?? "(route not resolved)"}" : null;
+                var depthText = ep.RouteInferred ? $"depth {ep.Depth}, route inferred from convention" : $"depth {ep.Depth}";
                 var line = routeText != null
-                    ? $"- {kindLabel,-9} {routeText,-28} → {ep.DisplayName}  (depth {ep.Depth})"
-                    : $"- {kindLabel,-9} {ep.DisplayName}  (depth {ep.Depth})";
+                    ? $"- {kindLabel,-9} {routeText,-28} → {ep.DisplayName}  ({depthText})"
+                    : $"- {kindLabel,-9} {ep.DisplayName}  ({depthText})";
                 sb.AppendLine(line);
             }
         }
@@ -160,7 +161,12 @@ public static class CompactRenderer
                 foreach (var s in group)
                 {
                     var confidenceNote = s.Confidence == "low" ? " (low confidence)" : "";
-                    var matchNote = s.MatchKind == "ambiguous" ? " (ambiguous match)" : "";
+                    var matchNote = s.MatchKind switch
+                    {
+                        "ambiguous" => " (ambiguous match)",
+                        "suffix" => " (matched by route suffix only)",
+                        _ => "",
+                    };
                     sb.AppendLine($"- {s.HttpMethod} {s.Route} — {ScreenLocation(s)}{confidenceNote}{matchNote}");
                 }
             }

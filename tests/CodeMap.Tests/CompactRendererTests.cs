@@ -151,9 +151,40 @@ public class CompactRendererTests
         StringAssert.Contains(markdown, "--full");
     }
 
+    [TestMethod] // a suffix link is a guess about a base URL the scanner could not see; it must not read like an exact one
+    public void Screen_linked_by_route_suffix_is_marked()
+    {
+        var entryPoints = new List<ReachedEntryPoint> { new("M:A", "A", "http", "GET", "api/orders", "Proj.A", 1) };
+        var screens = new List<ReachedScreen> { new("orders", "a.ts", 3, "GET", "orders", "high", "suffix", "M:A", new()) };
+
+        var markdown = CompactRenderer.Render(BuildResult(isHub: false, entryPoints, screens: screens), full: false, meta: null);
+
+        StringAssert.Contains(markdown, "(matched by route suffix only)");
+    }
+
+    [TestMethod] // no attribute declared it: it came from {controller}/{action}/{id?}, and the app's route table may say otherwise
+    public void Entry_point_with_an_inferred_route_is_marked()
+    {
+        var entryPoints = new List<ReachedEntryPoint> { new("M:A", "A", "http", "ANY", "orders/index/{id?}", "Proj.A", 1, RouteInferred: true) };
+
+        var markdown = CompactRenderer.Render(BuildResult(isHub: false, entryPoints), full: false, meta: null);
+
+        StringAssert.Contains(markdown, "route inferred from convention");
+    }
+
+    [TestMethod] // scan leaves the route null when a template could not be resolved to a constant
+    public void Http_entry_point_without_a_resolved_route_says_so()
+    {
+        var entryPoints = new List<ReachedEntryPoint> { new("M:A", "A", "http", "GET", null, "Proj.A", 1) };
+
+        var markdown = CompactRenderer.Render(BuildResult(isHub: false, entryPoints), full: false, meta: null);
+
+        StringAssert.Contains(markdown, "(route not resolved)");
+    }
+
     private static ImpactResult BuildResult(
         bool isHub, List<ReachedEntryPoint> entryPoints, int? directFanIn = null, int directCallersInferred = 0,
-        int viaInterface = 0, int viaInterfaceUnconfirmed = 0) => new()
+        int viaInterface = 0, int viaInterfaceUnconfirmed = 0, List<ReachedScreen>? screens = null) => new()
     {
         SymbolId = "M:Target",
         DisplayName = "Target",
@@ -168,7 +199,7 @@ public class CompactRendererTests
         ViaInterfaceUnconfirmedCount = viaInterfaceUnconfirmed,
         ViaMediatrCount = 0,
         EntryPoints = entryPoints,
-        Screens = new(),
+        Screens = screens ?? new(),
         TestsReached = new(),
         RelatedTickets = new(),
         CoChangingFiles = new(),

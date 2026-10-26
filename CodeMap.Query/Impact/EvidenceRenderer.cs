@@ -103,7 +103,9 @@ public static class EvidenceRenderer
 
         var path = result.GetPathToRoot(closest.Id); // closest ... root
         var labels = new List<string>();
-        var epLabel = closest.HttpMethod != null ? $"{closest.HttpMethod} {closest.Route}" : $"[{closest.Type}]";
+        var epLabel = closest.HttpMethod == null
+            ? $"[{closest.Type}]"
+            : $"{closest.HttpMethod} {closest.Route ?? "(route not resolved)"}{(closest.RouteInferred ? " (route inferred from convention)" : "")}";
         labels.Add(epLabel);
 
         for (var i = 0; i < path.Count; i++)
@@ -169,7 +171,13 @@ public static class EvidenceRenderer
             foreach (var s in group)
             {
                 var confidenceNote = s.Confidence == "low" ? " (low confidence)" : "";
-                sb.AppendLine($"- {s.HttpMethod} {s.Route} — {ScreenLocation(s)}{confidenceNote}");
+                var matchNote = s.MatchKind switch
+                {
+                    "ambiguous" => " (ambiguous match)",
+                    "suffix" => " (matched by route suffix only)",
+                    _ => "",
+                };
+                sb.AppendLine($"- {s.HttpMethod} {s.Route} — {ScreenLocation(s)}{confidenceNote}{matchNote}");
             }
         }
 
