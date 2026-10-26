@@ -38,9 +38,7 @@ public static class EvidenceRenderer
         sb.AppendLine();
         if (!code.Found)
         {
-            sb.AppendLine(
-                $"_Could not re-locate this symbol in {code.File ?? "(unknown file)"}. It may have been renamed or " +
-                "deleted since the last scan — re-run `codemap scan` and `codemap find` to get a current docId._");
+            sb.AppendLine(MissMessage(code));
         }
         else
         {
@@ -52,6 +50,32 @@ public static class EvidenceRenderer
 
         sb.AppendLine();
     }
+
+    /// <summary>
+    /// One cause per message. These used to be a single "renamed or deleted" — true for only one of the four, and
+    /// the likeliest real cause of the other (a path resolved from the wrong place) pointed the reader at a rename
+    /// that never happened.
+    /// </summary>
+    private static string MissMessage(LiveCode code) => code.Miss switch
+    {
+        LiveCodeMiss.SymbolNotInIndex =>
+            "_This symbol is not in the index, so there is no file to read. Run `codemap find` to look up its current docId, " +
+            "or `codemap sync` if the index is out of date._",
+
+        LiveCodeMiss.FileMissing =>
+            $"_The source file does not exist: `{code.TriedPath}` (the index records it as `{code.File}`). The path was most likely " +
+            "resolved from the wrong place — pass `--project <name>` so it is resolved against the project's repo, and with `--index` " +
+            "run the command from the repo root. If the file was moved or deleted since the scan, run `codemap sync` to refresh the index._",
+
+        LiveCodeMiss.OutsideRepo =>
+            $"_The index records this symbol in `{code.File}`, which resolves to `{code.TriedPath}` — outside the repository, so it was " +
+            "not read. The index may be corrupt or built for another checkout; run `codemap sync` to rebuild it._",
+
+        // SymbolNotLocated, and a LiveCode built without a reason.
+        _ =>
+            $"_`{code.File ?? "(unknown file)"}` exists, but the symbol could not be found in it. It may have been renamed or removed " +
+            "since the last scan — run `codemap find` to look up its current docId, or `codemap sync` to refresh the index._",
+    };
 
     private static void AppendPath(StringBuilder sb, ImpactResult result)
     {
@@ -183,5 +207,23 @@ public static class EvidenceRenderer
     }
 }
 
-/// <summary>Pre-fetched live-code lookup result, handed in by the CLI layer (which owns the Roslyn reference EvidenceRenderer can't have — spec section 2).</summary>
-public sealed record LiveCode(bool Found, string? File, int? Line, string? Snippet);
+/// <summary>Why `slice` has no current code to show. The causes need different fixes, so the output names which one it was.</summary>
+public enum LiveCodeMiss
+{
+    None,
+    /// <summary>The docId is not in symbols.jsonl: nothing says which file to open.</summary>
+    SymbolNotInIndex,
+    /// <summary>The file the index names is not on disk at the resolved path — usually the path is wrong, not the file gone.</summary>
+    FileMissing,
+    /// <summary>The index names a file that resolves outside the repo root; it is not read.</summary>
+    OutsideRepo,
+    /// <summary>The file is there but the symbol is not in it any more (renamed or removed).</summary>
+    SymbolNotLocated,
+}
+
+/// <summary>
+/// Pre-fetched live-code lookup result, handed in by the CLI layer (which owns the Roslyn reference EvidenceRenderer can't have — spec section 2).
+/// <paramref name="Miss"/> and <paramref name="TriedPath"/> say why and where when <paramref name="Found"/> is false;
+/// <c>TriedPath</c> is the absolute path that was (or, for OutsideRepo, would have been) read.
+/// </summary>
+public sealed record LiveCode(bool Found, string? File, int? Line, string? Snippet, LiveCodeMiss Miss = LiveCodeMiss.None, string? TriedPath = null);

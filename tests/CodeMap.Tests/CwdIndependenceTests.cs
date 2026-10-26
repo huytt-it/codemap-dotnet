@@ -1,4 +1,3 @@
-using System.Text.Json;
 using CodeMap.Cli.Cli;
 using CodeMap.Query.ArgParsing;
 using CodeMap.Query.Config;
@@ -6,6 +5,7 @@ using CodeMap.Query.Git;
 using CodeMap.Query.Impact;
 using CodeMap.Query.Map;
 using CodeMap.Query.Models;
+using static CodeMap.Tests.RegisteredProject;
 
 namespace CodeMap.Tests;
 
@@ -21,14 +21,6 @@ namespace CodeMap.Tests;
 [TestClass]
 public class CwdIndependenceTests
 {
-    private const string TargetId = "M:Orders.Svc.Cancel";
-    private const string CallerId = "M:Orders.Ctl.Post";
-    private const string SharedId = "M:Shared.Util.Helper";
-    private const string EscapingId = "M:Evil.Secret.Leak";
-    private const string LeakMarker = "THIS-TEXT-LIVES-OUTSIDE-THE-REPO";
-
-    private sealed record Fixture(string ConfigPath, string Repo, string IndexDir, string SolutionDir);
-
     // solution at src/ (the registry's `repo` omitted, so RepoOf defaults to the solution dir — not the git root),
     // the same with `repo` given, and a solution at the repo root.
     [DataTestMethod]
@@ -139,107 +131,4 @@ public class CwdIndependenceTests
             Directory.SetCurrentDirectory(previous);
         }
     }
-
-    private delegate int CommandRun(string[] args);
-
-    /// <summary>Runs a real command with the process cwd set to <paramref name="cwd"/>, writing through --out so nothing depends on capturing the console.</summary>
-    private static string RunCommand(CommandRun command, string cwd, params string[] args)
-    {
-        var outFile = Path.Combine(TestPaths.NewTempDir(), "out.md");
-        var previous = Directory.GetCurrentDirectory();
-        try
-        {
-            Directory.SetCurrentDirectory(cwd);
-            Assert.AreEqual(0, command(args.Concat(new[] { "--out", outFile }).ToArray()));
-        }
-        finally
-        {
-            Directory.SetCurrentDirectory(previous);
-        }
-
-        return File.ReadAllText(outFile);
-    }
-
-    /// <summary>
-    /// root/repo (git) with the solution in <paramref name="solutionDir"/>, root/out/index (a hand-written index
-    /// as of HEAD), root/config/codemap.projects.json, and root/outside/Evil.cs next to — not inside — the repo.
-    /// After the commit Svc.cs is edited without committing, so a correct banner has something to report.
-    /// </summary>
-    private static Fixture Build(string solutionDir, bool explicitRepo)
-    {
-        var root = TestPaths.NewTempDir();
-        var repo = Path.Combine(root, "repo");
-        Directory.CreateDirectory(repo);
-        GitFixtureHelper.InitInPlace(repo);
-
-        string InSolution(string file) => solutionDir.Length == 0 ? file : $"{solutionDir}/{file}";
-        const string svcSource = "namespace Orders;\npublic class Svc\n{\n    public void Cancel() { }\n}\n";
-        GitFixtureHelper.Commit(repo, "initial",
-            (InSolution("App.sln"), "Microsoft Visual Studio Solution File"),
-            (InSolution("Orders/Svc.cs"), svcSource),
-            (InSolution("Orders/Ctl.cs"), "namespace Orders;\npublic class Ctl\n{\n    public void Post() { }\n}\n"),
-            ("Shared/Util.cs", "namespace Shared;\npublic class Util\n{\n    public void Helper() { }\n}\n"));
-        var head = GitRepoInfo.TryGetHeadCommit(repo)!;
-        File.WriteAllText(Path.Combine(repo, InSolution("Orders/Svc.cs")), svcSource.Replace("Cancel() { }", "Cancel() { var edited = 1; }"));
-
-        var outsideDir = Path.Combine(root, "outside");
-        Directory.CreateDirectory(outsideDir);
-        File.WriteAllText(
-            Path.Combine(outsideDir, "Evil.cs"),
-            $"namespace Evil;\npublic class Secret\n{{\n    public void Leak() {{ }} // {LeakMarker}\n}}\n");
-
-        var solutionPath = InSolution("App.sln");
-        var indexDir = Path.Combine(root, "out", "index");
-        Directory.CreateDirectory(indexDir);
-
-        // symbols.jsonl paths are relative to the solution dir; "../" climbs out of it.
-        var sharedFromSolution = solutionDir.Length == 0 ? "Shared/Util.cs" : "../Shared/Util.cs";
-        var escapeFromSolution = (solutionDir.Length == 0 ? "../" : "../../") + "outside/Evil.cs";
-        WriteJsonl(Path.Combine(indexDir, "symbols.jsonl"),
-            Symbol(TargetId, "Cancel", "Orders.Svc", "Orders/Svc.cs", 4),
-            Symbol(CallerId, "Post", "Orders.Ctl", "Orders/Ctl.cs", 4),
-            Symbol(SharedId, "Helper", "Shared.Util", sharedFromSolution, 4),
-            Symbol(EscapingId, "Leak", "Evil.Secret", escapeFromSolution, 4));
-        WriteJsonl(Path.Combine(indexDir, "edges.jsonl"),
-            new { from = CallerId, to = TargetId, kind = "call", file = "Orders/Ctl.cs", line = 4 });
-        File.WriteAllText(
-            Path.Combine(indexDir, "entrypoints.json"),
-            JsonSerializer.Serialize(new[] { new { id = CallerId, type = "http", httpMethod = "POST", route = "api/orders" } }));
-        File.WriteAllText(
-            Path.Combine(indexDir, "meta.json"),
-            JsonSerializer.Serialize(new
-            {
-                indexedAt = "2026-01-01T00:00:00Z",
-                gitCommit = head,
-                solutionPath,
-                projectCount = 1,
-                symbolCount = 4,
-                edgeCount = 1,
-            }));
-
-        var configDir = Path.Combine(root, "config");
-        Directory.CreateDirectory(configDir);
-        var configPath = Path.Combine(configDir, ProjectRegistry.FileName);
-        var repoField = explicitRepo ? ", \"repo\": \"../repo\"" : "";
-        File.WriteAllText(configPath, $$"""
-            { "projects": [ { "name": "app", "solution": "../repo/{{solutionPath}}", "output": "../out"{{repoField}} } ] }
-            """);
-
-        return new Fixture(configPath, Path.GetFullPath(repo), Path.GetFullPath(indexDir), Path.GetFullPath(Path.Combine(repo, solutionDir)));
-    }
-
-    private static object Symbol(string id, string name, string containingType, string file, int line) => new
-    {
-        id,
-        kind = "Method",
-        name,
-        containingType,
-        project = "Orders",
-        file,
-        line,
-        accessibility = "Public",
-    };
-
-    private static void WriteJsonl(string path, params object[] rows)
-        => File.WriteAllLines(path, rows.Select(r => JsonSerializer.Serialize(r)));
 }

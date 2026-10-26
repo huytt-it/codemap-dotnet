@@ -59,16 +59,19 @@ internal static class SliceCommand
     internal static LiveCode LocateCurrentCode(ImpactIndex index, string symbolId, string repoRoot)
     {
         if (!index.SymbolsById.TryGetValue(symbolId, out var symbol))
-            return new LiveCode(false, null, null, null);
+            return new LiveCode(false, null, null, null, LiveCodeMiss.SymbolNotInIndex);
 
         var solutionDir = index.Meta?.SolutionPath is { } solutionPath ? Path.GetDirectoryName(solutionPath) ?? "" : "";
         var absolutePath = Path.GetFullPath(Path.Combine(repoRoot, solutionDir, symbol.File));
         if (!FilePathComparison.IsInside(repoRoot, absolutePath))
-            return new LiveCode(false, symbol.File, null, null);
+            return new LiveCode(false, symbol.File, null, null, LiveCodeMiss.OutsideRepo, absolutePath);
+
+        if (!File.Exists(absolutePath))
+            return new LiveCode(false, symbol.File, null, null, LiveCodeMiss.FileMissing, absolutePath);
 
         var located = LiveCodeLocator.Locate(absolutePath, symbol);
         return located == null
-            ? new LiveCode(false, symbol.File, null, null)
+            ? new LiveCode(false, symbol.File, null, null, LiveCodeMiss.SymbolNotLocated, absolutePath)
             : new LiveCode(true, symbol.File, located.Line, located.Snippet);
     }
 }
