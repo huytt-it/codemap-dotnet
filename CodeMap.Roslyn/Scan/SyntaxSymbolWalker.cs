@@ -587,6 +587,13 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         var fromId = CurrentFromId();
         if (fromId == null) return;
 
+        // `"a".Ext(1)` binds to the REDUCED extension method — a synthesized symbol whose docId drops the `this`
+        // parameter (M:N.E.Ext(System.Int32), not the declared M:N.E.Ext(System.String,System.Int32); for a
+        // generic one M:N.E.Gen``1 instead of M:N.E.Gen``1(``0)). That id matches no symbol in symbols.jsonl, so
+        // impact silently lost every caller using extension syntax. ReducedFrom is the declared method (null for
+        // the static-call form and for every non-extension call, which were already right).
+        if (target is IMethodSymbol { ReducedFrom: { } declared }) target = declared;
+
         var toId = target.OriginalDefinition.GetDocumentationCommentId();
         if (toId == null) return;
 
