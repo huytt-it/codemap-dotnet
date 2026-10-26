@@ -11,11 +11,12 @@ namespace CodeMap.Query.Impact;
 /// </summary>
 public static class EvidenceRenderer
 {
-    public static string Render(ImpactResult result, ImpactIndex index, LiveCode currentCode, MetaModel? meta)
+    /// <param name="repoRoot">Repo the staleness banner runs git in; null falls back to the process's working directory (bare `--index`).</param>
+    public static string Render(ImpactResult result, ImpactIndex index, LiveCode currentCode, MetaModel? meta, string? repoRoot = null)
     {
         var sb = new StringBuilder();
         var relevantFiles = currentCode.File != null ? new List<string> { currentCode.File } : new List<string>();
-        sb.Append(StalenessBanner.Render(meta, relevantFiles));
+        sb.Append(StalenessBanner.Render(meta, relevantFiles, repoRoot));
         sb.AppendLine();
 
         sb.AppendLine($"# Slice: {result.DisplayName}");

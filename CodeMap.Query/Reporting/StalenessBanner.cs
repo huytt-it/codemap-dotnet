@@ -9,9 +9,10 @@ namespace CodeMap.Query.Reporting;
 /// project's language convention (source/runtime output in English; only docs/ in the CODEMAP-SPEC.md sense are
 /// Vietnamese) — same call already made for MAP.md's section headers.
 ///
-/// Git commands run against the CURRENT WORKING DIRECTORY, not a `--repo` flag: none of the query commands
-/// (map/impact/slice) take one, so the natural reading is that the user runs them from inside the target repo
-/// (like any git-aware CLI), and git auto-discovers the repo root upward from there.
+/// Git commands run against the repo the caller names (<c>cwdOverride</c>) — for a registered project, the
+/// registry's repo, so the answer does not depend on where the process was started (an MCP server's cwd is its
+/// client's choice). With a bare `--index` there is nothing to name one, so the old convention holds: the user
+/// runs the command from inside the target repo (like any git-aware CLI) and git auto-discovers the root upward.
 /// </summary>
 public static class StalenessBanner
 {
@@ -23,12 +24,12 @@ public static class StalenessBanner
         "> If a question falls into the NOT COVERED category, say plainly that this file can't answer it.\n";
 
     /// <param name="relevantFiles">The files the answer depends on, in the index's own path space: relative to the scanned solution's directory, as symbols.jsonl records them. Git's repo-root-relative paths are rebased onto that space before comparing (GitPathRebaser).</param>
-    /// <param name="cwdOverride">Defaults to Environment.CurrentDirectory (production use — see class doc). Tests pass an explicit repo path instead of mutating global process state.</param>
+    /// <param name="cwdOverride">The repo to run git in. Null means Environment.CurrentDirectory (a bare `--index`, see class doc). Pass the registered project's repo, so the output is the same wherever the process runs; tests pass one too, instead of mutating global process state.</param>
     public static string Render(MetaModel? meta, IReadOnlyCollection<string>? relevantFiles = null, string? cwdOverride = null)
     {
         var sb = new StringBuilder();
         sb.Append("<!-- codemap v2 · ").Append(HeaderLine(meta)).Append('\n');
-        sb.Append("     ").Append(StalenessLine(meta, relevantFiles, cwdOverride ?? Environment.CurrentDirectory)).Append(" -->\n\n");
+        sb.Append("     ").Append(StalenessLine(meta, relevantFiles, cwdOverride)).Append(" -->\n\n");
         sb.Append(ScopeNote);
         return sb.ToString();
     }
@@ -38,8 +39,10 @@ public static class StalenessBanner
             ? "no meta.json found"
             : $"index commit {Short(meta.GitCommit)} · scanned {meta.IndexedAt}";
 
-    private static string StalenessLine(MetaModel? meta, IReadOnlyCollection<string>? relevantFiles, string cwd)
+    private static string StalenessLine(MetaModel? meta, IReadOnlyCollection<string>? relevantFiles, string? repoOverride)
     {
+        var cwd = repoOverride ?? Environment.CurrentDirectory;
+
         if (meta == null)
             return "staleness unknown (no meta.json — run `codemap scan` to produce one)";
         if (meta.GitCommit == null)
@@ -47,7 +50,9 @@ public static class StalenessBanner
 
         var currentHead = GitRepoInfo.TryGetHeadCommit(cwd);
         if (currentHead == null)
-            return "could not run git in the current directory — run this command from inside the target repo for a staleness comparison";
+            return repoOverride == null
+                ? "could not run git in the current directory — run this command from inside the target repo for a staleness comparison"
+                : $"could not run git in {repoOverride} — check that the project's repo in codemap.projects.json exists and is a git repository";
 
         // git reports repo-root-relative paths; the index (and so relevantFiles) is relative to the solution's own
         // directory. They differ whenever the solution is not at the repo root, so bring git's side over.

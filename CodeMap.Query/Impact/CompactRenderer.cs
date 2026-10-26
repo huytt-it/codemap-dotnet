@@ -10,10 +10,11 @@ namespace CodeMap.Query.Impact;
 /// </summary>
 public static class CompactRenderer
 {
-    public static string Render(ImpactResult result, bool full, MetaModel? meta)
+    /// <param name="repoRoot">Repo the staleness banner runs git in; null falls back to the process's working directory (bare `--index`).</param>
+    public static string Render(ImpactResult result, bool full, MetaModel? meta, string? repoRoot = null)
     {
         var sb = new StringBuilder();
-        sb.Append(StalenessBanner.Render(meta, CollectRelevantFiles(result)));
+        sb.Append(StalenessBanner.Render(meta, CollectRelevantFiles(result), repoRoot));
         sb.AppendLine();
 
         sb.AppendLine($"# Impact: {result.DisplayName}");
