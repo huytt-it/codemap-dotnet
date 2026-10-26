@@ -306,6 +306,8 @@ That is expected — every generated `.md` file carries a warning banner at the 
 current HEAD b7e1d04 · 11 commit(s) behind, 6 relevant file(s) changed since the scan
 ```
 
+Edits you have not committed yet count too: `matches the scan, but 2 relevant file(s) have uncommitted changes`, or `(2 uncommitted)` after the commit count. A file that is only a work in progress and not part of the answer does not make the index look stale.
+
 Once that number grows, scan again: `codemap sync --project <name>` (or `--all`). It overwrites the old output directory safely. Without a config file, repeat the commands in [Part 2b](#part-2b--manual-scanning-without-the-config-file).
 
 ### Adding a frontend to a project that was already scanned

@@ -22,6 +22,7 @@ public static class StalenessBanner
         "> environment-specific config, real data in the database.\n" +
         "> If a question falls into the NOT COVERED category, say plainly that this file can't answer it.\n";
 
+    /// <param name="relevantFiles">The files the answer depends on, in the index's own path space: relative to the scanned solution's directory, as symbols.jsonl records them. Git's repo-root-relative paths are rebased onto that space before comparing (GitPathRebaser).</param>
     /// <param name="cwdOverride">Defaults to Environment.CurrentDirectory (production use — see class doc). Tests pass an explicit repo path instead of mutating global process state.</param>
     public static string Render(MetaModel? meta, IReadOnlyCollection<string>? relevantFiles = null, string? cwdOverride = null)
     {
@@ -48,28 +49,50 @@ public static class StalenessBanner
         if (currentHead == null)
             return "could not run git in the current directory — run this command from inside the target repo for a staleness comparison";
 
+        // git reports repo-root-relative paths; the index (and so relevantFiles) is relative to the solution's own
+        // directory. They differ whenever the solution is not at the repo root, so bring git's side over.
+        var prefix = GitPathRebaser.PrefixOf(meta);
+        List<string>? InIndexSpace(List<string>? gitPaths) =>
+            prefix == null ? gitPaths : gitPaths?.Select(f => GitPathRebaser.Rebase(prefix, f)).ToList();
+
+        var relevantSet = relevantFiles is { Count: > 0 } ? new HashSet<string>(relevantFiles, StringComparer.OrdinalIgnoreCase) : null;
+        int CountIn(IEnumerable<string> files) => relevantSet == null ? files.Count() : files.Count(relevantSet.Contains);
+        var scope = relevantSet == null ? "file(s)" : "relevant file(s)";
+
+        var uncommitted = InIndexSpace(GitRepoInfo.TryGetUncommittedFiles(cwd));
+
         if (string.Equals(currentHead, meta.GitCommit, StringComparison.OrdinalIgnoreCase))
-            return $"current HEAD {Short(currentHead)} · matches the scan, index is fresh";
+        {
+            // HEAD matching is not enough: an edit that is not committed yet is invisible to it.
+            if (uncommitted == null)
+                return $"current HEAD {Short(currentHead)} · matches the scan (could not check for uncommitted changes)";
+
+            var dirty = CountIn(uncommitted);
+            return dirty == 0
+                ? $"current HEAD {Short(currentHead)} · matches the scan, index is fresh"
+                : $"current HEAD {Short(currentHead)} · matches the scan, but {dirty} {scope} have uncommitted changes";
+        }
 
         var commitCount = GitRepoInfo.TryGetCommitCountSince(cwd, meta.GitCommit);
-        var changedFiles = GitRepoInfo.TryGetChangedFilesSince(cwd, meta.GitCommit);
+        var committed = InIndexSpace(GitRepoInfo.TryGetChangedFilesSince(cwd, meta.GitCommit));
 
         var commitText = commitCount is { } n ? $"{n} commit(s) behind" : "commit count behind unknown";
 
         string fileText;
-        if (changedFiles == null)
+        if (committed == null)
         {
             fileText = "changed-file count unknown";
         }
-        else if (relevantFiles is { Count: > 0 })
-        {
-            var relevantSet = new HashSet<string>(relevantFiles, StringComparer.OrdinalIgnoreCase);
-            var relevantChanged = changedFiles.Count(f => relevantSet.Contains(f));
-            fileText = $"{relevantChanged} relevant file(s) changed since the scan";
-        }
         else
         {
-            fileText = $"{changedFiles.Count} file(s) changed in the repo since the scan";
+            // A file can be both committed-over and dirty; Union counts it once.
+            var changed = uncommitted == null ? committed : committed.Union(uncommitted, StringComparer.OrdinalIgnoreCase).ToList();
+            fileText = relevantSet == null
+                ? $"{CountIn(changed)} file(s) changed in the repo since the scan"
+                : $"{CountIn(changed)} relevant file(s) changed since the scan";
+
+            var dirty = uncommitted == null ? 0 : CountIn(uncommitted);
+            if (dirty > 0) fileText += $" ({dirty} uncommitted)";
         }
 
         return $"current HEAD {Short(currentHead)} · {commitText}, {fileText}";

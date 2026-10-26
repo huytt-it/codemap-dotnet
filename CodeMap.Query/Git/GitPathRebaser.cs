@@ -37,6 +37,12 @@ internal static class GitPathRebaser
             return null;
         }
 
+        return PrefixOf(meta);
+    }
+
+    /// <summary>Same prefix as <see cref="ReadSolutionPrefix"/>, for a caller that already holds the loaded meta (the staleness banner).</summary>
+    public static string? PrefixOf(MetaModel? meta)
+    {
         var prefix = Path.GetDirectoryName(meta?.SolutionPath ?? string.Empty)
             ?.Replace('\\', '/')
             .Trim('/');

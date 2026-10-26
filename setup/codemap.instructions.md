@@ -278,7 +278,9 @@ kết quả:
 ### Banner staleness ở đầu mỗi file
 
 Mỗi report ghi index quét lúc nào và lệch bao nhiêu commit so với HEAD. Nếu lệch nhiều và có
-file liên quan đã đổi sau khi quét, nói cho tôi biết trước khi kết luận.
+file liên quan đã đổi sau khi quét, nói cho tôi biết trước khi kết luận. Banner cũng đếm cả file
+đang sửa dở chưa commit (`have uncommitted changes`, hoặc `(N uncommitted)`): index không biết về
+những thay đổi đó, kể cả khi HEAD trùng với lúc quét.
 
 ### Dữ liệu git là lịch sử, không phải cấu trúc
 

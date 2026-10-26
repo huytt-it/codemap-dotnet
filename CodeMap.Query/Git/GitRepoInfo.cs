@@ -17,14 +17,25 @@ public static class GitRepoInfo
 
     public static string? TryGetRepoRoot(string repoPath) => RunSingleLine(repoPath, "rev-parse", "--show-toplevel");
 
-    /// <summary>Files that differ between <paramref name="fromCommit"/> and the current working tree HEAD (spec section 7.5).</summary>
+    /// <summary>Files that differ between <paramref name="fromCommit"/> and the current working tree HEAD (spec section 7.5). Committed changes only — see <see cref="TryGetUncommittedFiles"/> for the rest. Paths are relative to the repo root.</summary>
     public static List<string>? TryGetChangedFilesSince(string repoPath, string fromCommit)
-    {
-        var output = Run(repoPath, "diff", "--name-only", fromCommit, "HEAD");
-        return output?.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+        => ParsePaths(Run(repoPath, "-c", "core.quotepath=false", "diff", "--name-only", fromCommit, "HEAD"));
+
+    /// <summary>
+    /// Tracked files whose staged or unstaged content differs from HEAD. A scan describes the tree as of its
+    /// commit, so an edit that is not committed yet is just as stale as one that is, and HEAD alone cannot see it.
+    /// Untracked files are not listed: a file the index has symbols for was tracked when it was scanned.
+    /// Paths are relative to the repo root.
+    /// </summary>
+    public static List<string>? TryGetUncommittedFiles(string repoPath)
+        => ParsePaths(Run(repoPath, "-c", "core.quotepath=false", "diff", "--name-only", "HEAD"));
+
+    // quotepath=false: by default git wraps a path with non-ASCII bytes in quotes and octal-escapes it
+    // ("\346\263\250..."), so a Japanese or Vietnamese file name would never equal the name the index recorded.
+    private static List<string>? ParsePaths(string? gitOutput)
+        => gitOutput?.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(l => l.TrimEnd('\r'))
             .ToList();
-    }
 
     /// <summary>How many commits HEAD is ahead of <paramref name="fromCommit"/> (spec section 7.5 staleness banner).</summary>
     public static int? TryGetCommitCountSince(string repoPath, string fromCommit)
