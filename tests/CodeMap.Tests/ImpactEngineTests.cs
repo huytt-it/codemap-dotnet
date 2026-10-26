@@ -99,6 +99,48 @@ public class ImpactEngineTests
         Assert.AreEqual(0, result.IntermediateCallers.Count);
     }
 
+    [DataTestMethod]
+    [DataRow("MyApp.Tests")]
+    [DataRow("MyApp.Test")]
+    [DataRow("MyApp.UnitTests")]
+    [DataRow("MyApp.IntegrationTests")]
+    [DataRow("OrderServiceTests")]
+    [DataRow("MyApp.Tests.Common")]
+    [DataRow("myapp.tests")]
+    public void Project_names_with_a_test_segment_are_tests(string project)
+    {
+        var index = BuildIndex(
+            symbols: new[] { "T:A", "T:Caller" },
+            edges: new[] { ("T:Caller", "T:A") },
+            entryPoints: Array.Empty<string>(),
+            projectOverrides: new Dictionary<string, string> { ["T:Caller"] = project });
+
+        var result = ImpactEngine.Traverse(index, "T:A", depth: 3);
+
+        Assert.AreEqual(1, result.TestsReached.Count, project);
+        Assert.AreEqual(0, result.IntermediateCallers.Count, project);
+    }
+
+    [DataTestMethod] // "Test" appears inside the word, not as a segment of the name
+    [DataRow("Attestation")]
+    [DataRow("LatestNews")]
+    [DataRow("Contest.Core")]
+    [DataRow("MyApp.Contests")]
+    [DataRow("Orders.Core")]
+    public void Project_names_that_merely_contain_the_letters_test_are_not_tests(string project)
+    {
+        var index = BuildIndex(
+            symbols: new[] { "T:A", "T:Caller" },
+            edges: new[] { ("T:Caller", "T:A") },
+            entryPoints: Array.Empty<string>(),
+            projectOverrides: new Dictionary<string, string> { ["T:Caller"] = project });
+
+        var result = ImpactEngine.Traverse(index, "T:A", depth: 3);
+
+        Assert.AreEqual(0, result.TestsReached.Count, project);
+        Assert.AreEqual(1, result.IntermediateCallers.Count, project);
+    }
+
     [TestMethod]
     public void GetPathToRoot_reconstructs_the_shortest_discovered_chain()
     {

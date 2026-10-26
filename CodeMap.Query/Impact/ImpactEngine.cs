@@ -59,7 +59,7 @@ public static class ImpactEngine
             var isConfirmed = !unconfirmedBinding.Contains(id);
             if (index.EntryPointsById.TryGetValue(id, out var ep))
                 entryPoints.Add(new ReachedEntryPoint(id, displayName, ep.Type, ep.HttpMethod, ep.Route, project, d, isConfirmed));
-            else if (project.Contains("Test", StringComparison.OrdinalIgnoreCase))
+            else if (TestProjectName.IsTestProject(project))
                 testsReached.Add(displayName);
             else
                 intermediateCallers.Add(new CallerNode(id, displayName, project, d, isConfirmed));
