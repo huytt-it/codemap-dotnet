@@ -36,21 +36,34 @@ internal static class LinkCommand
             .GroupBy(e => (e.HttpMethod!, RouteNormalizer.NormalizeBackendRoute(e.Route!)))
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        var backendBySuffixKey = BuildSuffixIndex(backendByKey);
+
         var links = new List<ApiLink>();
         var unmatched = new List<UnmatchedFrontendCall>();
 
         foreach (var call in frontendCalls)
         {
             var key = (call.HttpMethod, call.Route);
-            if (!backendByKey.TryGetValue(key, out var matches) || matches.Count == 0)
+            if (backendByKey.TryGetValue(key, out var matches) && matches.Count > 0)
+            {
+                var matchKind = matches.Count == 1 ? "exact" : "ambiguous";
+                foreach (var backend in matches)
+                    links.Add(new ApiLink(call.Id, backend.Id, matchKind));
+                continue;
+            }
+
+            var suffixMatches = call.BaseUrlDropped ? FindSuffixMatches(backendBySuffixKey, call) : new List<EntryPoint>();
+            if (suffixMatches.Count == 0)
             {
                 unmatched.Add(new UnmatchedFrontendCall(call.Id, call.HttpMethod, call.Route));
                 continue;
             }
 
-            var matchKind = matches.Count == 1 ? "exact" : "ambiguous";
-            foreach (var backend in matches)
-                links.Add(new ApiLink(call.Id, backend.Id, matchKind));
+            // "ambiguous", not "suffix", when several backend routes end the same way: that is the kind the impact
+            // renderers already flag, and what they need to know is that the link is a guess among several.
+            var suffixKind = suffixMatches.Count == 1 ? "suffix" : "ambiguous";
+            foreach (var backend in suffixMatches)
+                links.Add(new ApiLink(call.Id, backend.Id, suffixKind));
         }
 
         var linkedBackendIds = links.Select(l => l.BackendId).ToHashSet(StringComparer.Ordinal);
@@ -66,9 +79,47 @@ internal static class LinkCommand
         diagnostics.UnreferencedEndpoints.AddRange(unreferenced);
         JsonUtil.WriteIndented(diagnosticsPath, diagnostics);
 
-        Console.WriteLine($"api-links.jsonl: {links.Count} link(s) ({links.Count(l => l.MatchKind == "ambiguous")} ambiguous) -> {indexDir}");
+        Console.WriteLine($"api-links.jsonl: {links.Count} link(s) ({links.Count(l => l.MatchKind == "suffix")} suffix, {links.Count(l => l.MatchKind == "ambiguous")} ambiguous) -> {indexDir}");
         Console.WriteLine($"diagnostics.json: {unmatched.Count} unmatched frontend call(s), {unreferenced.Count} unreferenced endpoint(s)");
 
         return 0;
+    }
+
+    /// <summary>Backend routes indexed by (httpMethod, last segment) — a suffix match needs the last segments to agree, so this narrows each lookup to the few routes that could possibly qualify.</summary>
+    private static Dictionary<(string Method, string LastSegment), List<(string[] Segments, List<EntryPoint> Endpoints)>> BuildSuffixIndex(
+        Dictionary<(string Method, string Route), List<EntryPoint>> backendByKey)
+    {
+        var index = new Dictionary<(string Method, string LastSegment), List<(string[] Segments, List<EntryPoint> Endpoints)>>();
+        foreach (var ((method, route), endpoints) in backendByKey)
+        {
+            var segments = route.Split('/');
+            var key = (method, segments[^1]);
+            if (!index.TryGetValue(key, out var bucket))
+                index[key] = bucket = new();
+            bucket.Add((segments, endpoints));
+        }
+
+        return index;
+    }
+
+    /// <summary>
+    /// A frontend call whose base URL the normalizer discarded (`${this.baseUrl}/orders` -> "orders") can only be
+    /// compared on its tail, so a backend route matches when the frontend route is a proper whole-segment suffix of
+    /// it ("orders" ends "api/orders"; it does not end "api/suborders"). The whole frontend route is always the
+    /// suffix being compared, so every candidate matches with the same length and there is nothing to rank: more
+    /// than one candidate stays more than one (the caller marks them ambiguous). A route made only of wildcards
+    /// ("{*}") is never tried — it ends nearly every parameterized backend route and would link everything.
+    /// </summary>
+    private static List<EntryPoint> FindSuffixMatches(
+        Dictionary<(string Method, string LastSegment), List<(string[] Segments, List<EntryPoint> Endpoints)>> index, FrontendCall call)
+    {
+        var wanted = call.Route.Split('/');
+        if (wanted.All(s => s == RouteNormalizer.Wildcard)) return new();
+        if (!index.TryGetValue((call.HttpMethod, wanted[^1]), out var candidates)) return new();
+
+        return candidates
+            .Where(c => c.Segments.Length > wanted.Length && c.Segments.AsSpan(c.Segments.Length - wanted.Length).SequenceEqual(wanted))
+            .SelectMany(c => c.Endpoints)
+            .ToList();
     }
 }
