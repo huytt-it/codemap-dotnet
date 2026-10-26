@@ -49,6 +49,29 @@ public class FrontendLinkRecallTests
         StringAssert.Contains(unparsed.Reason, "conventional routing");
     }
 
+    [TestMethod] // all three Angular gaps at once: a non-"http" receiver name, a base URL field, a component injecting through inject()
+    public void Angular_service_using_inject_and_a_base_url_field_is_linked_and_attributed_to_its_component()
+    {
+        var root = TestPaths.NewTempDir();
+        Directory.CreateDirectory(Path.Combine(root, "src", "app", "orders"));
+        File.WriteAllText(Path.Combine(root, "src", "app", "orders", "order-api.service.ts"),
+            "import { HttpClient, inject } from '@angular/common/http';\n@Injectable({ providedIn: 'root' })\nexport class OrderApiService {\n  private readonly baseUrl = environment.apiUrl;\n  private readonly api = inject(HttpClient);\n  list() { return this.api.get(`${this.baseUrl}/orders`); }\n}\n");
+        File.WriteAllText(Path.Combine(root, "src", "app", "orders", "order-list.component.ts"),
+            "@Component({ selector: 'app-order-list' })\nexport class OrderListComponent {\n  private readonly orderApi = inject(OrderApiService);\n}\n");
+        var outcome = TypeScriptCallScanner.Scan(root);
+        if (outcome.SkippedReason != null)
+            Assert.Inconclusive($"TypeScript scanning unavailable in this environment: {outcome.SkippedReason}");
+
+        var (links, diagnostics) = ScanAndLink(root, new EntryPoint("M:Api.OrdersController.List", "http", "GET", "api/orders"));
+
+        var link = links.Single();
+        Assert.AreEqual("suffix", link.MatchKind);
+        Assert.AreEqual("M:Api.OrdersController.List", link.BackendId);
+        Assert.AreEqual(0, diagnostics.UnresolvedFrontendInjections.Count);
+        var call = outcome.Calls.Single();
+        CollectionAssert.AreEqual(new[] { "OrderListComponent" }, call.InjectedBy);
+    }
+
     /// <summary>Runs scan-fe over <paramref name="frontendRoot"/>, drops a hand-made entrypoints.json next to its output, runs link, returns what link wrote.</summary>
     private static (List<ApiLink> Links, DiagnosticsModel Diagnostics) ScanAndLink(string frontendRoot, params EntryPoint[] entryPoints)
     {
