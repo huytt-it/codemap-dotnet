@@ -244,6 +244,78 @@ public class WhereEngineRankingTests
         Assert.AreEqual(0, WhereEngine.Search(index, "khi bị").Count);
     }
 
+    // ---- ordering of equal scores --------------------------------------------------------------------------
+
+    [TestMethod]
+    public void When_a_ticket_ties_a_whole_file_methods_come_before_the_fields_that_used_to_fill_the_top_10()
+    {
+        // A ticket scores every symbol in the file it touched identically. The tie then fell to the doc ID, whose
+        // first letter ("F:" < "M:" < "P:" < "T:") put every field in front of every method: twelve fields
+        // filled the ten result slots and the method the ticket was actually about never showed.
+        var symbols = new List<Sym>
+        {
+            new("T:Orders.OrderService", "OrderService", null, "OrderService.cs", "Class"),
+            new("P:Orders.OrderService.Total", "Total", "Orders.OrderService", "OrderService.cs", "Property"),
+            new("M:Orders.OrderService.Create", "Create", "Orders.OrderService", "OrderService.cs"),
+            new("M:Orders.OrderService.Cancel", "Cancel", "Orders.OrderService", "OrderService.cs"),
+        };
+        symbols.AddRange(Enumerable.Range(1, 12).Select(n =>
+            new Sym($"F:Orders.OrderService._field{n:00}", $"_field{n:00}", "Orders.OrderService", "OrderService.cs", "Field")));
+        var index = BuildIndex(symbols.ToArray(), tickets: OneTicketOn("OrderService.cs", "hủy đơn hàng"));
+
+        var results = WhereEngine.Search(index, "hủy đơn hàng");
+
+        Assert.AreEqual(10, results.Count);
+        CollectionAssert.AreEqual(
+            new[] { "M:Orders.OrderService.Cancel", "M:Orders.OrderService.Create", "T:Orders.OrderService", "P:Orders.OrderService.Total" },
+            results.Take(4).Select(r => r.SymbolId).ToList());
+        Assert.AreEqual(1, results.Select(r => r.Score).Distinct().Count(), "the ordering must not invent score differences");
+    }
+
+    [TestMethod]
+    public void An_entry_point_comes_before_the_other_symbols_of_the_same_score()
+    {
+        var index = BuildIndex(
+            symbols: new[]
+            {
+                new Sym("M:Orders.OrderService.Cancel", "Cancel", "Orders.OrderService", "OrderService.cs"),
+                new Sym("M:Orders.OrderService.Handle", "Handle", "Orders.OrderService", "OrderService.cs"),
+            },
+            tickets: OneTicketOn("OrderService.cs", "hủy đơn hàng"),
+            entryPoints: new[] { new EntryPoint("M:Orders.OrderService.Handle", "http", "POST", "api/v1/zzz") });
+
+        var results = WhereEngine.Search(index, "hủy đơn hàng");
+
+        Assert.AreEqual("M:Orders.OrderService.Handle", results[0].SymbolId);
+        Assert.AreEqual(results[0].Score, results[1].Score);
+    }
+
+    [TestMethod]
+    public void The_tie_break_never_overrides_a_real_score_difference()
+    {
+        // A field in a file the better-matching ticket touched still beats a method from a weaker match.
+        var index = BuildIndex(
+            symbols: new[]
+            {
+                new Sym("F:Orders.OrderService._repo", "_repo", "Orders.OrderService", "OrderService.cs", "Field"),
+                new Sym("M:Stock.StockService.Reduce", "Reduce", "Stock.StockService", "StockService.cs"),
+            },
+            tickets: new[]
+            {
+                new TicketFileRecord("1", new() { "a1" }, "2026-06-14", "hủy đơn hàng", new() { "OrderService.cs" }),
+                new TicketFileRecord("2", new() { "a2" }, "2026-06-15", "hủy đơn", new() { "StockService.cs" }),
+            });
+
+        var results = WhereEngine.Search(index, "hủy đơn hàng");
+
+        CollectionAssert.AreEqual(
+            new[] { "F:Orders.OrderService._repo", "M:Stock.StockService.Reduce" },
+            results.Select(r => r.SymbolId).ToList());
+    }
+
+    private static TicketFileRecord[] OneTicketOn(string file, string message) =>
+        new[] { new TicketFileRecord("4821", new() { "a1" }, "2026-06-14", message, new() { file }) };
+
     // ---- helpers ------------------------------------------------------------------------------------------
 
     private sealed record Sym(string Id, string Name, string? ContainingType, string File, string Kind = "Method");

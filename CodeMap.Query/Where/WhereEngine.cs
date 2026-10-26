@@ -57,10 +57,30 @@ public static partial class WhereEngine
         return hits
             .Select(kv => BuildCandidate(index, kv.Key, kv.Value))
             .OrderByDescending(c => c.Score)
+            .ThenBy(c => index.EntryPointsById.ContainsKey(c.SymbolId) ? 0 : 1)
+            .ThenBy(c => KindRank(index.SymbolsById[c.SymbolId].Kind))
             .ThenBy(c => c.SymbolId, StringComparer.Ordinal)
             .Take(MaxResults)
             .ToList();
     }
+
+    /// <summary>
+    /// Order among symbols that earned the same score. A ticket scores every symbol in a file it touched alike, so
+    /// the whole file ties, and the doc ID that used to break it starts with the kind letter ("F:" before "M:"
+    /// before "P:" before "T:"): a file with a dozen fields pushed every method out of the ten result slots. Entry
+    /// points first, then the kinds a change is most likely to land in. This only reorders ties; it never
+    /// changes a score or what is printed, and a symbol the ticket's message names already outscores its siblings
+    /// through <see cref="NamedInTicketBonus"/>.
+    /// </summary>
+    private static int KindRank(string kind) => kind switch
+    {
+        "Method" => 0,
+        "Class" or "Struct" or "Record" or "Interface" => 1,
+        "Constructor" => 2,
+        "Property" or "Event" => 3,
+        "Field" => 4,
+        _ => 5,
+    };
 
     /// <summary>
     /// Combines every raw hit one symbol received into the one score and bounded reason list it's shown with.
