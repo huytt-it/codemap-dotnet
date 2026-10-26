@@ -54,6 +54,40 @@ public class FrontendUrlNormalizerTests
         Assert.IsNull(FrontendUrlNormalizer.Normalize("endpoint"));
     }
 
+    [TestMethod] // `link` may suffix-match only when the front of the path was thrown away, so the normalizer has to say so
+    public void Dropped_leading_base_url_is_reported()
+    {
+        var withEnvironment = FrontendUrlNormalizer.NormalizeDetailed("`${environment.apiUrl}/api/orders`")!;
+        Assert.AreEqual("api/orders", withEnvironment.Route);
+        Assert.IsTrue(withEnvironment.BaseUrlDropped);
+
+        var withThisField = FrontendUrlNormalizer.NormalizeDetailed("`${this.baseUrl}/orders`")!;
+        Assert.AreEqual("orders", withThisField.Route);
+        Assert.IsTrue(withThisField.BaseUrlDropped);
+
+        Assert.IsTrue(FrontendUrlNormalizer.NormalizeDetailed("API_BASE + '/orders'")!.BaseUrlDropped);
+    }
+
+    [TestMethod]
+    public void Url_that_starts_with_a_literal_has_no_dropped_base_url()
+    {
+        Assert.IsFalse(FrontendUrlNormalizer.NormalizeDetailed("`/api/orders/${id}`")!.BaseUrlDropped);
+        Assert.IsFalse(FrontendUrlNormalizer.NormalizeDetailed("'/api/orders/' + id")!.BaseUrlDropped);
+    }
+
+    [TestMethod] // an interpolation in the middle is a wildcard segment, not a base URL that was dropped
+    public void Interpolation_after_a_literal_prefix_is_not_a_dropped_base_url()
+    {
+        Assert.IsFalse(FrontendUrlNormalizer.NormalizeDetailed("'/api/' + area + '/orders'")!.BaseUrlDropped);
+    }
+
+    [TestMethod]
+    public void Normalize_and_NormalizeDetailed_agree_on_the_route()
+    {
+        Assert.AreEqual(FrontendUrlNormalizer.Normalize("`${this.baseUrl}/orders/${id}`"), FrontendUrlNormalizer.NormalizeDetailed("`${this.baseUrl}/orders/${id}`")!.Route);
+        Assert.IsNull(FrontendUrlNormalizer.NormalizeDetailed("endpoint"));
+    }
+
     [TestMethod]
     public void Mixed_case_is_lowercased_for_comparison()
     {

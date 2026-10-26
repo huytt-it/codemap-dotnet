@@ -69,8 +69,8 @@ internal static class ScanFeCommand
     {
         foreach (var c in raw)
         {
-            var route = FrontendUrlNormalizer.Normalize(c.RawUrl);
-            if (route == null)
+            var normalized = FrontendUrlNormalizer.NormalizeDetailed(c.RawUrl);
+            if (normalized == null)
             {
                 unparsed.Add(new UnparsedFrontendUrl(c.File, c.Line, c.HttpMethod, c.RawUrl, "URL expression has no recognizable path structure (likely a dynamic/computed value)"));
                 continue;
@@ -79,7 +79,7 @@ internal static class ScanFeCommand
             var feature = FeatureExtractor.Extract(c.File, config.EffectiveFrontendAppDir);
             var id = $"fe:{c.File}:{c.Line}";
             var injectedBy = c.InjectedBy ?? new List<string>();
-            calls.Add(new FrontendCall(id, c.File, c.Line, c.HttpMethod, c.RawUrl, route, feature, confidence, injectedBy));
+            calls.Add(new FrontendCall(id, c.File, c.Line, c.HttpMethod, c.RawUrl, normalized.Route, feature, confidence, injectedBy, normalized.BaseUrlDropped));
 
             // Spec (Review Fix Pass v1, "nối FE thiếu 1 hop"): only 1 level of DI resolution is attempted (see
             // ts-call-scan.js) — a call with nobody found injecting its containing service directly is reported,

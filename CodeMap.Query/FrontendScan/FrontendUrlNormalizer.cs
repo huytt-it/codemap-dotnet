@@ -11,14 +11,20 @@ namespace CodeMap.Query.FrontendScan;
 /// </summary>
 public static partial class FrontendUrlNormalizer
 {
-    public static string? Normalize(string rawExpression)
+    /// <summary>The normalized route, plus whether a leading non-literal part (the base URL) was discarded to get it — in that case the route is only the tail of the real path, which `link` may match as a suffix.</summary>
+    public sealed record NormalizedUrl(string Route, bool BaseUrlDropped);
+
+    public static string? Normalize(string rawExpression) => NormalizeDetailed(rawExpression)?.Route;
+
+    public static NormalizedUrl? NormalizeDetailed(string rawExpression)
     {
         var segments = Tokenize(rawExpression);
         if (segments.Count == 0) return null;
 
         // Spec: "Bỏ base URL và biến environment (${environment.apiUrl}, API_BASE) khỏi đầu chuỗi" — a leading
         // non-literal segment is dropped entirely, not turned into {*}, since it's not part of the route path.
-        if (!segments[0].IsLiteral)
+        var baseUrlDropped = !segments[0].IsLiteral;
+        if (baseUrlDropped)
             segments.RemoveAt(0);
         if (segments.Count == 0) return null;
 
@@ -26,7 +32,7 @@ public static partial class FrontendUrlNormalizer
         if (!combined.Contains('/')) return null; // no discernible path structure — genuinely unparseable
 
         var normalized = RouteNormalizer.NormalizeCommon(combined);
-        return normalized.Length == 0 ? null : normalized;
+        return normalized.Length == 0 ? null : new NormalizedUrl(normalized, baseUrlDropped);
     }
 
     private readonly record struct Segment(bool IsLiteral, string Text);
