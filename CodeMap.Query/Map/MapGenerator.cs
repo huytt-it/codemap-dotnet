@@ -152,8 +152,8 @@ internal sealed class MapGenerator
         sb.AppendLine();
         sb.AppendLine(
             "_Layer is inferred from cross-project edge direction in edges.jsonl (0 = no dependency on another " +
-            "project in the solution). At L1 scan (inherits/implements edges only) this may be incomplete — it " +
-            "gets more accurate after L2._");
+            "project in the solution). At L1 scan (calls into NuGet/framework types don't resolve, so their edges " +
+            "are missing) this may be incomplete — it gets more accurate after L2._");
         sb.AppendLine();
     }
 

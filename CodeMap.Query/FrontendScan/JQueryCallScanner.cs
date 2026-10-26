@@ -67,7 +67,7 @@ public static partial class JQueryCallScanner
         if (SkippedDirectoryNames.Contains(name, StringComparer.OrdinalIgnoreCase)) return true;
         // ASP.NET Core's client-side package folder (LibMan/bower output): vendored libraries, not the app's own scripts.
         return name.Equals("lib", StringComparison.OrdinalIgnoreCase)
-            && Path.GetFileName(Path.GetDirectoryName(path)).Equals("wwwroot", StringComparison.OrdinalIgnoreCase);
+            && string.Equals(Path.GetFileName(Path.GetDirectoryName(path)), "wwwroot", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsScannedFile(string name)

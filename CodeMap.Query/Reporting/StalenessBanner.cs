@@ -1,5 +1,6 @@
 using System.Text;
 using CodeMap.Query.Git;
+using CodeMap.Query.Impact;
 using CodeMap.Query.Models;
 
 namespace CodeMap.Query.Reporting;
@@ -60,7 +61,8 @@ public static class StalenessBanner
         List<string>? InIndexSpace(List<string>? gitPaths) =>
             prefix == null ? gitPaths : gitPaths?.Select(f => GitPathRebaser.Rebase(prefix, f)).ToList();
 
-        var relevantSet = relevantFiles is { Count: > 0 } ? new HashSet<string>(relevantFiles, StringComparer.OrdinalIgnoreCase) : null;
+        // Same path comparison as every other file join in the index: case-insensitive only where the file system is.
+        var relevantSet = relevantFiles is { Count: > 0 } ? new HashSet<string>(relevantFiles, FilePathComparison.Comparer) : null;
         int CountIn(IEnumerable<string> files) => relevantSet == null ? files.Count() : files.Count(relevantSet.Contains);
         var scope = relevantSet == null ? "file(s)" : "relevant file(s)";
 
@@ -91,7 +93,7 @@ public static class StalenessBanner
         else
         {
             // A file can be both committed-over and dirty; Union counts it once.
-            var changed = uncommitted == null ? committed : committed.Union(uncommitted, StringComparer.OrdinalIgnoreCase).ToList();
+            var changed = uncommitted == null ? committed : committed.Union(uncommitted, FilePathComparison.Comparer).ToList();
             fileText = relevantSet == null
                 ? $"{CountIn(changed)} file(s) changed in the repo since the scan"
                 : $"{CountIn(changed)} relevant file(s) changed since the scan";
