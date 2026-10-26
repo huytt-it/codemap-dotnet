@@ -1,4 +1,3 @@
-using CodeMap.Query.Json;
 using CodeMap.Query.Models;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -10,6 +9,12 @@ namespace CodeMap.Roslyn.Scan;
 /// Every .cs file from every project is merged into ONE compilation (with only the BCL references of the running
 /// runtime) so cross-project symbols in the solution still resolve correctly — inherits/implements never need to
 /// guess by name; only things genuinely outside the solution (NuGet packages, dynamic registration) land in diagnostics.
+///
+/// The same binding gives call/new/read/write edges, entry points and DI data for everything declared in the
+/// solution, so this writes the same index files L2 does. What L1 misses is a call whose overload can't be picked
+/// without a NuGet type (an argument or receiver typed with one): the walker drops an unresolved call rather than
+/// guessing, so L1 under-reports callers but doesn't invent them. Measured on eShopOnWeb: 236 call edges against
+/// L2's 254, all 25 HTTP entry points, 16 of L2's 17 DI-mapped services (was 0 call edges and no entrypoints.json).
 /// </summary>
 internal sealed class SyntaxOnlyScanner
 {
@@ -24,6 +29,7 @@ internal sealed class SyntaxOnlyScanner
         Directory.CreateDirectory(indexDir);
 
         var diagnostics = new DiagnosticsModel();
+        var config = ScanResults.LoadConfig(solutionDir);
         var projectsRaw = SolutionFileParser.ParseProjects(solutionPath);
         if (projectsRaw.Count == 0)
             Console.Error.WriteLine("Warning: no .csproj project found in the solution.");
@@ -70,9 +76,7 @@ internal sealed class SyntaxOnlyScanner
                     name, $"{fileFailures.Count} file(s) could not be read: {string.Join("; ", fileFailures.Take(5))}"));
         }
 
-        var allSymbols = new List<SymbolRecord>();
-        var allEdges = new List<EdgeRecord>();
-        var unresolved = new List<UnresolvedBaseRef>();
+        var results = new ScanResults();
 
         if (trees.Count > 0)
         {
@@ -88,44 +92,20 @@ internal sealed class SyntaxOnlyScanner
                 var project = fileToProject.TryGetValue(tree.FilePath, out var p) ? p : "?";
                 var relFile = ToRelativePath(solutionDir, tree.FilePath);
 
-                var walker = new SyntaxSymbolWalker(model, project, relFile, _includeExternal, emitDataFlowEdges: false);
+                var walker = new SyntaxSymbolWalker(model, project, relFile, _includeExternal, config.DiAttribute);
                 walker.Visit(tree.GetRoot());
-
-                allSymbols.AddRange(walker.Symbols);
-                allEdges.AddRange(walker.DirectEdges);
-                unresolved.AddRange(walker.UnresolvedBaseRefs);
+                results.Add(walker, project, diagnostics,
+                    "Could not resolve the base type (outside the solution: NuGet package, or dynamic type registration).");
             }
         }
 
-        foreach (var u in unresolved)
-        {
-            diagnostics.UnresolvedInheritance.Add(new UnresolvedInheritance(
-                u.Project, u.File, u.Line, u.FromDocId, u.BaseSimpleName,
-                "Could not resolve the base type (outside the solution: NuGet package, or dynamic type registration)."));
-        }
-
-        // The solution-wide merged compilation (see class doc) trades in one risk: docId doesn't encode the
-        // assembly name, so two fully-qualified-name-identical types in two different projects (legal in .NET)
-        // collide on docId. This is an inherent limitation of docId itself, not a merging bug — log it
-        // transparently instead of letting symbols.jsonl carry two records sharing an "id" unnoticed.
-        var crossProjectDuplicates = allSymbols
-            .GroupBy(s => s.Id, StringComparer.Ordinal)
-            .Where(g => g.Select(s => s.Project).Distinct().Count() > 1)
-            .Select(g => new DuplicateDocId(
-                g.Key,
-                g.Select(s => s.Project).Distinct().ToList(),
-                g.Select(s => s.File).Distinct().ToList()))
-            .ToList();
-        diagnostics.DuplicateDocIdsAcrossProjects.AddRange(crossProjectDuplicates);
-
-        JsonlWriter.Write(Path.Combine(indexDir, "symbols.jsonl"), allSymbols);
-        JsonlWriter.Write(Path.Combine(indexDir, "edges.jsonl"), allEdges);
-        JsonUtil.WriteIndented(Path.Combine(indexDir, "diagnostics.json"), diagnostics);
+        var diMappedCount = results.CompleteAndWrite(indexDir, config, diagnostics);
         MetaWriter.Write(indexDir, solutionPath, solutionDir, projectsRaw.Count,
-            diagnostics.DegradedProjects.Select(d => d.Project).ToList(), allSymbols.Count, allEdges.Count);
+            diagnostics.DegradedProjects.Select(d => d.Project).ToList(), results.Symbols.Count, results.Edges.Count);
 
         Console.WriteLine(
-            $"Scan (L1) done: {allSymbols.Count} symbols, {allEdges.Count} edges, " +
+            $"Scan (L1) done: {results.Symbols.Count} symbols, {results.Edges.Count} edges, {diMappedCount} DI-mapped interface(s), " +
+            $"{results.EntryPoints.Count} entry point(s), " +
             $"{diagnostics.DegradedProjects.Count} degraded project(s), {diagnostics.UnresolvedInheritance.Count} unresolved base type(s), " +
             $"{diagnostics.DuplicateDocIdsAcrossProjects.Count} cross-project docId collision(s).");
         Console.WriteLine($"Output: {indexDir}");
