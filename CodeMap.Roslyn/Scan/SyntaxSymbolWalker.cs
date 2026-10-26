@@ -35,6 +35,10 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     private readonly Stack<ControllerInfo?> _controllerStack = new();
 
     public List<SymbolRecord> Symbols { get; } = new();
+
+    /// <summary>Compiler-generated parameterless constructors: symbols only if some edge targets one (ScanResults decides, it sees every file's edges).</summary>
+    public List<SymbolRecord> ImplicitConstructors { get; } = new();
+
     public List<EdgeRecord> DirectEdges { get; } = new();
     public List<UnresolvedBaseRef> UnresolvedBaseRefs { get; } = new();
 
@@ -94,8 +98,29 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
 
     public override void VisitEnumDeclaration(EnumDeclarationSyntax node)
     {
-        EmitTypeSymbol(node, "Enum", node.AttributeLists);
+        var symbol = EmitTypeSymbol(node, "Enum", node.AttributeLists);
+        if (symbol != null)
+        {
+            _typeStack.Push(DisplayName(symbol));
+            _typeIdStack.Push(symbol.GetDocumentationCommentId() ?? "");
+            _controllerStack.Push(null);
+        }
+
         base.VisitEnumDeclaration(node);
+
+        if (symbol != null)
+        {
+            _typeStack.Pop();
+            _typeIdStack.Pop();
+            _controllerStack.Pop();
+        }
+    }
+
+    /// <summary>`Level.High` is a read edge to F:N.Level.High; without a symbol for it, that edge dangled.</summary>
+    public override void VisitEnumMemberDeclaration(EnumMemberDeclarationSyntax node)
+    {
+        var id = EmitMemberSymbol(node, "EnumMember", node.AttributeLists);
+        WithMember(id, () => base.VisitEnumMemberDeclaration(node));
     }
 
     public override void VisitDelegateDeclaration(DelegateDeclarationSyntax node)
@@ -252,6 +277,7 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         ControllerInfo? controller = null;
         if (symbol != null && kind is "Class" or "Struct" or "Record")
         {
+            EmitUnwrittenConstructors(symbol, node);
             RecordInterfaceMappings(symbol);
             TryRecordAttributeDiBinding(symbol);
             if (kind == "Class")
@@ -272,6 +298,44 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
             _typeStack.Pop();
             _typeIdStack.Pop();
             _controllerStack.Pop();
+        }
+    }
+
+    /// <summary>
+    /// The instance constructors a `new` can bind to that no ConstructorDeclaration declares, so
+    /// VisitConstructorDeclaration never emitted them and every `new` edge to them dangled. A primary constructor
+    /// (`record Person(string Name)`, C# 12 `class C(int id)`) is written by hand and always emitted. A class's or
+    /// struct's implicit parameterless one (DTOs and view models built with `new X { ... }`) only becomes a symbol
+    /// once ScanResults sees an edge to it — every class without a constructor has one, and listing them all would
+    /// mostly add noise. Placed at the type declaration, once for a partial type. A record's copy constructor is
+    /// left out: only `with` uses it, and that makes no edge.
+    /// </summary>
+    private void EmitUnwrittenConstructors(INamedTypeSymbol type, TypeDeclarationSyntax node)
+    {
+        var first = type.DeclaringSyntaxReferences.FirstOrDefault();
+        if (first == null || first.SyntaxTree != node.SyntaxTree || first.Span != node.Span) return;
+
+        foreach (var ctor in type.InstanceConstructors)
+        {
+            var isPrimary = ctor.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is TypeDeclarationSyntax);
+            var isRecordCopy = type.IsRecord && ctor.Parameters.Length == 1 && SymbolEqualityComparer.Default.Equals(ctor.Parameters[0].Type, type);
+            if (!isPrimary && !(ctor.IsImplicitlyDeclared && !isRecordCopy)) continue;
+
+            var id = ctor.GetDocumentationCommentId();
+            if (id == null) continue;
+
+            var record = new SymbolRecord
+            {
+                Id = id,
+                Kind = "Constructor",
+                Name = ctor.Name,
+                ContainingType = DisplayName(type),
+                Project = _project,
+                File = _file,
+                Line = LineOf(node),
+                Accessibility = ctor.DeclaredAccessibility.ToString(),
+            };
+            (isPrimary ? Symbols : ImplicitConstructors).Add(record);
         }
     }
 

@@ -17,6 +17,7 @@ internal sealed class ScanResults
     public List<EdgeRecord> Edges { get; } = new();
     public List<EntryPoint> EntryPoints { get; } = new();
 
+    private readonly List<SymbolRecord> _implicitConstructors = new();
     private readonly List<(string InterfaceId, string ImplId)> _interfaceImpls = new();
     private readonly List<(string InterfaceMemberId, string ImplMemberId)> _interfaceMemberMaps = new();
     private readonly List<(string OverriddenId, string OverrideId, List<string> OverrideTypeAndBaseIds)> _overrideMaps = new();
@@ -43,6 +44,7 @@ internal sealed class ScanResults
     public void Add(SyntaxSymbolWalker walker, string project, DiagnosticsModel diagnostics, string unresolvedBaseTypeReason)
     {
         Symbols.AddRange(walker.Symbols);
+        _implicitConstructors.AddRange(walker.ImplicitConstructors);
         Edges.AddRange(walker.DirectEdges);
         EntryPoints.AddRange(walker.EntryPoints);
         _interfaceImpls.AddRange(walker.InterfaceImplementations);
@@ -75,8 +77,9 @@ internal sealed class ScanResults
 
         DetectDiRegistrationConflicts(_attributeDiBindings, _diRegistrations, diagnostics);
         var (diMap, diConfirmedMap) = BuildDiJson(_interfaceImpls, _diRegistrations, _attributeDiBindings, config.DiManualOverrides, diagnostics);
-        AddCrossProjectDuplicateDiagnostics(Symbols, diagnostics);
         ExpandMediatrSendEdges(Edges, _mediatrSendSites, _mediatrHandlerMaps);
+        AddTargetedImplicitConstructors(Symbols, _implicitConstructors, Edges);
+        AddCrossProjectDuplicateDiagnostics(Symbols, diagnostics);
 
         JsonlWriter.Write(Path.Combine(indexDir, "symbols.jsonl"), Symbols);
         JsonlWriter.Write(Path.Combine(indexDir, "edges.jsonl"), Edges);
@@ -103,6 +106,13 @@ internal sealed class ScanResults
             foreach (var handleId in handleIds)
                 edges.Add(new EdgeRecord { From = fromId, To = handleId, Kind = "call", File = file, Line = line, Via = "mediatr" });
         }
+    }
+
+    /// <summary>A compiler-generated constructor becomes a symbol once something constructs it, so the `new` edge to it has somewhere to land (see SyntaxSymbolWalker.EmitUnwrittenConstructors).</summary>
+    private static void AddTargetedImplicitConstructors(List<SymbolRecord> symbols, List<SymbolRecord> implicitConstructors, List<EdgeRecord> edges)
+    {
+        var targets = edges.Select(e => e.To).ToHashSet(StringComparer.Ordinal);
+        symbols.AddRange(implicitConstructors.Where(c => targets.Contains(c.Id)));
     }
 
     /// <summary>Duplicates each `call` edge that targets an interface member into a new edge at each concrete implementation, marked via:"interface". Keeps the original edge too.</summary>

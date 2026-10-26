@@ -20,10 +20,10 @@ public class S1_CorrectnessTests
         _edges = JsonlReader.Read<EdgeRecord>(Path.Combine(_outDir, "index", "edges.jsonl"));
     }
 
-    [TestMethod] // S1.1
-    public void Produces_exactly_88_symbols()
+    [TestMethod] // S1.1 — 88 declared, plus the implicit constructors of the 3 classes the fixture constructs with `new`
+    public void Produces_exactly_91_symbols()
     {
-        Assert.AreEqual(88, _symbols.Count);
+        Assert.AreEqual(91, _symbols.Count);
     }
 
     [DataTestMethod] // S1.2
