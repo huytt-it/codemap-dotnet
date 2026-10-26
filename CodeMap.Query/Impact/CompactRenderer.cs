@@ -19,7 +19,7 @@ public static class CompactRenderer
 
         sb.AppendLine($"# Impact: {result.DisplayName}");
         if (result.File != null) sb.AppendLine($"File: {result.File}:{result.Line}");
-        sb.AppendLine($"Direct fan-in: {result.DirectFanIn} · Depth scanned: {result.DepthScanned}");
+        sb.AppendLine($"Direct fan-in: {DirectFanInText(result)} · Depth scanned: {result.DepthScanned}");
         sb.AppendLine();
 
         if (result.IsHub && !full)
@@ -42,13 +42,27 @@ public static class CompactRenderer
         return sb.ToString();
     }
 
+    /// <summary>Says what is being counted: this used to be the raw number of reverse edges, which also held extra call sites, field reads/writes and interface-expansion copies.</summary>
+    private static string DirectFanInText(ImpactResult result)
+    {
+        var inferred = result.DirectCallersInferred > 0
+            ? $"; {result.DirectCallersInferred} only through interface/MediatR expansion"
+            : "";
+        return $"{result.DirectFanIn} distinct caller(s) (methods that call or construct it, once each{inferred})";
+    }
+
     private static void AppendHubWarning(StringBuilder sb, ImpactResult result)
     {
         var screenCount = result.Screens.Select(s => s.Feature).Distinct(StringComparer.Ordinal).Count();
+        var unconfirmedCount = result.EntryPoints.Count(e => !e.IsConfirmedBinding);
         sb.AppendLine("## ⚠ This symbol is a hub");
         sb.AppendLine(
-            $"Reaches {result.EntryPoints.Count} entry point(s) across {result.ModuleFanIn.Count} module(s)" +
+            $"Reaches {result.EntryPoints.Count - unconfirmedCount} entry point(s) across {result.ModuleFanIn.Count} module(s)" +
             (screenCount > 0 ? $" and {screenCount} FE screen(s)." : "."));
+        if (unconfirmedCount > 0)
+            sb.AppendLine(
+                $"{unconfirmedCount} more entry point(s) are reachable only through implementations DI does not bind at that call site " +
+                "(not counted above; --full lists them).");
         sb.AppendLine("Blast radius is system-wide. Don't change the signature, don't change default behavior.");
         sb.AppendLine("Re-run with --full if you still need the full list.");
         sb.AppendLine();
@@ -174,10 +188,18 @@ public static class CompactRenderer
 
     private static void AppendRiskScore(StringBuilder sb, ImpactResult result)
     {
+        // The score is computed on confirmed bindings (ImpactEngine), so the line shows exactly that part; the
+        // rest is named below it rather than dropped, since "speculative" is not "absent".
+        var unconfirmedEntryPoints = result.EntryPoints.Count(e => !e.IsConfirmedBinding);
+        var confirmedInterfaceHops = result.ViaInterfaceCount - result.ViaInterfaceUnconfirmedCount;
         sb.AppendLine($"## Risk score: {result.RiskScore}/10");
         sb.AppendLine(
-            $"{result.EntryPoints.Count} entry point(s) · {result.TestsReached.Count} test(s) · " +
-            $"{result.ViaInterfaceCount} interface hop(s) · {result.ViaMediatrCount} MediatR hop(s)");
+            $"{result.EntryPoints.Count - unconfirmedEntryPoints} entry point(s) · {result.TestsReached.Count} test(s) · " +
+            $"{confirmedInterfaceHops} interface hop(s) · {result.ViaMediatrCount} MediatR hop(s)");
+        if (unconfirmedEntryPoints > 0 || result.ViaInterfaceUnconfirmedCount > 0)
+            sb.AppendLine(
+                "Not counted in the score — reachable only through an implementation DI does not bind at that call site: " +
+                $"{unconfirmedEntryPoints} entry point(s), {result.ViaInterfaceUnconfirmedCount} interface hop(s) (see \"Other possible implementations\").");
         sb.AppendLine();
     }
 
