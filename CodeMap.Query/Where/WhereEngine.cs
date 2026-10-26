@@ -298,8 +298,30 @@ public static partial class WhereEngine
     private static void AppendWord(string word, List<string> tokens)
     {
         var lowered = word.ToLowerInvariant();
-        if (lowered.Length >= 2) tokens.Add(lowered); // drop "a"/"I"/"1" noise, same as before
+        if (lowered.Length >= 2 && !VietnameseFunctionWords.Contains(lowered)) // drop "a"/"I"/"1" noise, same as before
+            tokens.Add(lowered);
     }
+
+    /// <summary>
+    /// Vietnamese words that carry grammar rather than a business concept. Left in, they make unrelated tickets
+    /// agree: BENCHMARK-WHERE query 9 ("mua hàng online bị lỗi khi bấm nút mua") ranked a login ticket first on
+    /// "bị" and "khi" alone, the same false confidence the hiragana filter removes for Japanese. Applied to
+    /// queries and messages alike (both go through Tokenize), so a function word can neither add overlap nor pad
+    /// the query's token count and dilute the real matches.
+    /// Kept small and to what is unambiguous. Words that are also content ("đơn", "hàng", "lỗi", "mới", "cần")
+    /// stay out. Diacritics are not folded, because folding would merge "bán" (sell), "bạn" (you) and "ban" into
+    /// one token; the cost is that a team who commits without diacritics gets no stop-word help, which is
+    /// the same as before. For the same reason no entry is a bare-ASCII English word or C# keyword ("do").
+    /// </summary>
+    private static readonly HashSet<string> VietnameseFunctionWords = new(
+        new[]
+        {
+            "bị", "bởi", "bằng", "các", "có", "cho", "chưa", "cũng", "của", "đã", "đang", "đây", "đó", "được", "để",
+            "đến", "hay", "hoặc", "khi", "không", "là", "lại", "mà", "một", "nên", "này", "nào", "nếu", "những",
+            "như", "nhưng", "rất", "sau", "sẽ", "theo", "thì", "tại", "trên", "dưới", "trong", "trước", "từ", "và",
+            "vẫn", "vào", "vì", "về", "với", "còn",
+        }.Select(w => Fold(w).ToLowerInvariant()),
+        StringComparer.Ordinal);
 
     /// <summary>
     /// The words inside one PascalCase/camelCase identifier: a capital after a lowercase letter or digit starts a

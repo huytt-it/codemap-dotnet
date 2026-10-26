@@ -184,6 +184,66 @@ public class WhereEngineRankingTests
         Assert.IsFalse(order.Reasons.Any(reason => reason.Contains("names this symbol directly")));
     }
 
+    // ---- Vietnamese function words -------------------------------------------------------------------------
+
+    [TestMethod]
+    public void Vietnamese_function_words_are_not_tokens_but_the_words_around_them_are()
+    {
+        var tokens = WhereEngine.Tokenize("hủy đơn hàng khi được thanh toán và bị lỗi").ToList();
+
+        CollectionAssert.AreEquivalent(new[] { "hủy", "đơn", "hàng", "thanh", "toán", "lỗi" }, tokens);
+    }
+
+    [TestMethod]
+    public void The_list_never_folds_diacritics_so_words_that_only_look_like_function_words_survive()
+    {
+        // "bán" (sell), "ban" (committee / a name part) and "bạn" (you) are not on the list, and neither are the
+        // English words the unaccented forms of "do", "là" and "có" would collide with.
+        var tokens = WhereEngine.Tokenize("bán ban bạn do la co").ToList();
+
+        CollectionAssert.AreEquivalent(new[] { "bán", "ban", "bạn", "do", "la", "co" }, tokens);
+    }
+
+    [TestMethod]
+    public void A_function_word_written_in_decomposed_form_is_still_recognised()
+    {
+        var tokens = WhereEngine.Tokenize("khi " + "được".Normalize(System.Text.NormalizationForm.FormD) + " hủy").ToList();
+
+        CollectionAssert.AreEquivalent(new[] { "hủy" }, tokens);
+    }
+
+    [TestMethod]
+    public void A_ticket_that_shares_only_function_words_with_the_query_does_not_surface()
+    {
+        // The benchmark's query 9 failure in miniature: "khi" and "được" are the whole overlap with the second ticket.
+        var index = BuildIndex(
+            symbols: new[]
+            {
+                new Sym("M:Orders.OrderService.Cancel", "Cancel", "Orders.OrderService", "OrderService.cs"),
+                new Sym("M:Catalog.CatalogService.Remove", "Remove", "Catalog.CatalogService", "CatalogService.cs"),
+            },
+            tickets: new[]
+            {
+                new TicketFileRecord("301", new() { "a1" }, "2026-06-14", "hủy đơn hàng", new() { "OrderService.cs" }),
+                new TicketFileRecord("302", new() { "a2" }, "2026-06-15", "xóa sản phẩm khi được duyệt", new() { "CatalogService.cs" }),
+            });
+
+        var results = WhereEngine.Search(index, "hủy đơn hàng khi được thanh toán");
+
+        Assert.AreEqual(1, results.Count);
+        Assert.AreEqual("M:Orders.OrderService.Cancel", results[0].SymbolId);
+    }
+
+    [TestMethod]
+    public void A_query_made_only_of_function_words_finds_nothing()
+    {
+        var index = BuildIndex(
+            symbols: new[] { new Sym("M:Orders.OrderService.Cancel", "Cancel", "Orders.OrderService", "OrderService.cs") },
+            tickets: new[] { new TicketFileRecord("301", new() { "a1" }, "2026-06-14", "hủy đơn khi bị lỗi", new() { "OrderService.cs" }) });
+
+        Assert.AreEqual(0, WhereEngine.Search(index, "khi bị").Count);
+    }
+
     // ---- helpers ------------------------------------------------------------------------------------------
 
     private sealed record Sym(string Id, string Name, string? ContainingType, string File, string Kind = "Method");
