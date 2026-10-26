@@ -76,10 +76,10 @@ public static class ImpactEngine
         var rootFile = rootSymbol?.File;
         var relatedTickets = rootFile == null
             ? new List<TicketFileRecord>()
-            : index.Tickets.Where(t => t.Files.Contains(rootFile, StringComparer.Ordinal)).ToList();
+            : index.Tickets.Where(t => t.Files.Contains(rootFile, FilePathComparison.Comparer)).ToList();
         var coChanging = rootFile == null
             ? new List<CoChangeRecord>()
-            : index.CoChanges.Where(c => c.FileA == rootFile || c.FileB == rootFile).ToList();
+            : index.CoChanges.Where(c => FilePathComparison.Comparer.Equals(c.FileA, rootFile) || FilePathComparison.Comparer.Equals(c.FileB, rootFile)).ToList();
 
         var screens = BuildScreens(index, entryPoints);
 

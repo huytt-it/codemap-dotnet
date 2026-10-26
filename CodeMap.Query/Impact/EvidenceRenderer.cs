@@ -201,7 +201,7 @@ public static class EvidenceRenderer
         sb.AppendLine();
         foreach (var c in result.CoChangingFiles.OrderByDescending(c => c.Strength))
         {
-            var other = c.FileA == result.File ? c.FileB : c.FileA;
+            var other = FilePathComparison.Comparer.Equals(c.FileA, result.File) ? c.FileB : c.FileA;
             sb.AppendLine($"- {other} — {c.Together}/{Math.Min(c.TotalA, c.TotalB)} times (strength {c.Strength:0.00}) ⚠ Roslyn can't see this relationship");
         }
 

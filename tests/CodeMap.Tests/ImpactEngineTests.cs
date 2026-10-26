@@ -141,6 +141,43 @@ public class ImpactEngineTests
         Assert.AreEqual(1, result.IntermediateCallers.Count, project);
     }
 
+    // git's index and the project file the Roslyn scan read can spell one path differently ("Orders/Svc.cs" vs
+    // "orders/svc.cs"). Where the file system folds case they are the same file and must join; where it does not
+    // they are two files and must not.
+    private static bool PathsJoin => FilePathComparison.Comparison == StringComparison.OrdinalIgnoreCase;
+
+    [TestMethod]
+    public void Ticket_files_join_to_the_symbols_file_the_way_the_file_system_compares_paths()
+    {
+        var index = BuildIndex(
+            symbols: new[] { "T:A" }, edges: Array.Empty<(string, string)>(), entryPoints: Array.Empty<string>(),
+            tickets: new[] { new TicketFileRecord("ABC-1", new List<string>(), "2026-01-01", "fix", new List<string> { "T:a.cs" }) });
+
+        var result = ImpactEngine.Traverse(index, "T:A", depth: 3);
+
+        Assert.AreEqual(PathsJoin ? 1 : 0, result.RelatedTickets.Count);
+    }
+
+    [TestMethod]
+    public void Co_change_files_join_to_the_symbols_file_the_way_the_file_system_compares_paths()
+    {
+        var index = BuildIndex(
+            symbols: new[] { "T:A" }, edges: Array.Empty<(string, string)>(), entryPoints: Array.Empty<string>(),
+            coChanges: new[] { new CoChangeRecord("T:a.cs", "other.sql", 5, 6, 7, 0.8) });
+
+        var result = ImpactEngine.Traverse(index, "T:A", depth: 3);
+
+        Assert.AreEqual(PathsJoin ? 1 : 0, result.CoChangingFiles.Count);
+    }
+
+    [TestMethod]
+    public void Symbols_by_file_looks_up_with_the_same_comparison()
+    {
+        var index = BuildIndex(symbols: new[] { "T:A" }, edges: Array.Empty<(string, string)>(), entryPoints: Array.Empty<string>());
+
+        Assert.AreEqual(PathsJoin ? 1 : 0, index.SymbolsByFile["T:a.cs"].Count());
+    }
+
     [TestMethod]
     public void GetPathToRoot_reconstructs_the_shortest_discovered_chain()
     {
@@ -202,7 +239,8 @@ public class ImpactEngineTests
     private static ImpactIndex BuildIndex(
         IEnumerable<string> symbols, IEnumerable<(string From, string To)> edges, IEnumerable<string> entryPoints,
         Dictionary<string, string>? projectOverrides = null, string entryPointType = "handler",
-        IEnumerable<FrontendCall>? frontendCalls = null, IEnumerable<ApiLink>? apiLinks = null)
+        IEnumerable<FrontendCall>? frontendCalls = null, IEnumerable<ApiLink>? apiLinks = null,
+        IEnumerable<TicketFileRecord>? tickets = null, IEnumerable<CoChangeRecord>? coChanges = null)
     {
         var symbolsById = symbols.ToDictionary(
             id => id,
@@ -225,8 +263,8 @@ public class ImpactEngineTests
             SymbolsById = symbolsById,
             ReverseEdges = edgeRecords.GroupBy(e => e.To, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal),
             EntryPointsById = entryPoints.ToDictionary(id => id, id => new EntryPoint(id, entryPointType), StringComparer.Ordinal),
-            Tickets = new(),
-            CoChanges = new(),
+            Tickets = (tickets ?? Enumerable.Empty<TicketFileRecord>()).ToList(),
+            CoChanges = (coChanges ?? Enumerable.Empty<CoChangeRecord>()).ToList(),
             FrontendCallsById = (frontendCalls ?? Enumerable.Empty<FrontendCall>()).ToDictionary(c => c.Id, StringComparer.Ordinal),
             ApiLinksByBackendId = (apiLinks ?? Enumerable.Empty<ApiLink>()).GroupBy(l => l.BackendId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal),
             Diagnostics = null,
