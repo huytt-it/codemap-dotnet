@@ -67,6 +67,13 @@ internal static class GitLogRunner
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
+        // By default git wraps any path holding non-ASCII bytes in quotes and octal-escapes it
+        // ("\346\263\250\346\226\207.cs"). That string ends in '"', so the extension filter drops the file, and it
+        // would not equal the name symbols.jsonl holds anyway: a Japanese or Vietnamese file name would silently
+        // never reach ticket-files.jsonl or co-change.jsonl. (Paths with a quote, backslash or control character
+        // are still quoted, quotepath or not; that is rare enough in a .NET repo to leave alone.)
+        psi.ArgumentList.Add("-c");
+        psi.ArgumentList.Add("core.quotepath=false");
         psi.ArgumentList.Add("log");
         foreach (var a in logArgs) psi.ArgumentList.Add(a);
         psi.ArgumentList.Add($"--pretty=format:{CommitDelimiter}%H|%ad|%s");

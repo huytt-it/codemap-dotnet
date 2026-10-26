@@ -312,6 +312,46 @@ public class ScanGitTests
         CollectionAssert.AreEquivalent(new[] { "src/Orders/Svc.cs" }, ticket.Files);
     }
 
+    // By default git quotes a path with non-ASCII bytes and octal-escapes it ("\346\263\250..."). The quoted form ends
+    // in '"' rather than ".cs", so the extension filter drops it: a Japanese or Vietnamese file name never reaches
+    // ticket-files.jsonl at all, and a ticket that touched only such files disappears. Each test keeps one ASCII
+    // file in the commit so the ticket survives and the assertion shows exactly which files went missing.
+    [TestMethod]
+    public void Non_ascii_file_names_are_recorded_as_written_not_escaped_by_git()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 order cancel",
+            ("Plain.cs", "class P {}"), ("注文/キャンセル.cs", "class A {}"), ("Đơn/Hủy.cs", "class B {}"));
+
+        var ticket = ReadTickets(RunScanGit(repo)).Single(t => t.Ticket == "1234");
+
+        CollectionAssert.AreEquivalent(new[] { "Plain.cs", "注文/キャンセル.cs", "Đơn/Hủy.cs" }, ticket.Files);
+    }
+
+    [TestMethod] // rename resolution is keyed on path strings, so the name it resolves to has to be the real one too
+    public void File_renamed_to_a_non_ascii_name_resolves_to_that_name()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 add", ("Plain.cs", "class P {}"), ("Svc.cs", "class Svc { void Cancel() {} }"));
+        GitFixtureHelper.Rename(repo, "Svc.cs", "注文.cs", "fix #1234 rename");
+
+        var ticket = ReadTickets(RunScanGit(repo)).Single(t => t.Ticket == "1234");
+
+        CollectionAssert.AreEquivalent(new[] { "Plain.cs", "注文.cs" }, ticket.Files);
+    }
+
+    [TestMethod] // the prefix strip compares from the first character, so an opening quote would defeat it as well
+    public void Non_ascii_file_name_in_a_nested_solution_is_rebased()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1234 order cancel", ("src/Plain.cs", "class P {}"), ("src/注文/Svc.cs", "class Svc {}"));
+
+        var outDir = RunScanGitWithMeta(repo, solutionPath: "src/App.sln");
+
+        var ticket = ReadTickets(outDir).Single(t => t.Ticket == "1234");
+        CollectionAssert.AreEquivalent(new[] { "Plain.cs", "注文/Svc.cs" }, ticket.Files);
+    }
+
     [TestMethod] // the join is silent when it fails, so scan-git has to say so itself
     public void Warns_when_no_ticket_file_matches_any_scanned_symbol()
     {
