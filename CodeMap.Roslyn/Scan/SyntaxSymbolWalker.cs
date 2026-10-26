@@ -2,6 +2,7 @@ using CodeMap.Query.Models;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Operations;
 
 namespace CodeMap.Roslyn.Scan;
 
@@ -154,7 +155,20 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     public override void VisitMemberAccessExpression(MemberAccessExpressionSyntax node)
     {
         HandleMemberAccess(node);
+        HandleMethodGroup(node);
         base.VisitMemberAccessExpression(node);
+    }
+
+    public override void VisitIdentifierName(IdentifierNameSyntax node)
+    {
+        HandleMethodGroup(node);
+        base.VisitIdentifierName(node);
+    }
+
+    public override void VisitGenericName(GenericNameSyntax node)
+    {
+        HandleMethodGroup(node);
+        base.VisitGenericName(node);
     }
 
     /// <summary>Emits a symbol per declarator (Field/EventField), then visits ITS OWN initializer with that
@@ -688,6 +702,36 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         EmitMemberEdge(method, "call", LineOf(node));
     }
 
+    /// <summary>
+    /// A method named without being invoked — `xs.Select(MapToDto)`, `Clicked += OnClick`, `new Func&lt;int&gt;(M)`,
+    /// `Run(Work)` — is converted to a delegate that something else invokes later, so the code handing it over is
+    /// the closest static caller there is. Emitted as a `call` edge marked via:"delegate": the method may run
+    /// later, more than once, or never. Roslyn models exactly this conversion as an IMethodReferenceOperation;
+    /// the callee of an ordinary `M()` never is one, so a plain call is not counted twice. `Clicked -= OnClick`
+    /// is skipped: it takes the handler out, nothing runs because of it.
+    /// </summary>
+    private void HandleMethodGroup(ExpressionSyntax node)
+    {
+        // Cheap syntactic exclusions before asking for the operation: the callee of an invocation, and the Name
+        // half of `x.M` (the member access as a whole is the method group, and is visited on its own).
+        if (node.Parent is InvocationExpressionSyntax invocation && invocation.Expression == node) return;
+        if (node.Parent is MemberAccessExpressionSyntax access && access.Name == node) return;
+        if (node.Parent is AssignmentExpressionSyntax assignment && assignment.Right == node &&
+            assignment.IsKind(SyntaxKind.SubtractAssignmentExpression)) return;
+        // Every identifier comes through here; only one that binds to a method is worth building operations for.
+        if (_model.GetSymbolInfo(node).Symbol is not IMethodSymbol) return;
+
+        var reference = _model.GetOperation(node) switch
+        {
+            IMethodReferenceOperation r => r,
+            IDelegateCreationOperation { Target: IMethodReferenceOperation r } => r,
+            _ => null,
+        };
+        if (reference == null) return;
+
+        EmitMemberEdge(reference.Method, "call", LineOf(node), via: "delegate");
+    }
+
     private void HandleObjectCreation(BaseObjectCreationExpressionSyntax node)
     {
         if (_model.GetSymbolInfo(node).Symbol is not IMethodSymbol { MethodKind: MethodKind.Constructor } ctor) return;
@@ -703,7 +747,7 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         EmitMemberEdge(symbol, kind, LineOf(node));
     }
 
-    private void EmitMemberEdge(ISymbol target, string kind, int line)
+    private void EmitMemberEdge(ISymbol target, string kind, int line, string? via = null)
     {
         var declaredInSolution = target.Locations.Any(l => l.IsInSource);
         if (!declaredInSolution && !_includeExternal) return;
@@ -721,7 +765,7 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         var toId = target.OriginalDefinition.GetDocumentationCommentId();
         if (toId == null) return;
 
-        DirectEdges.Add(new EdgeRecord { From = fromId, To = toId, Kind = kind, File = _file, Line = line });
+        DirectEdges.Add(new EdgeRecord { From = fromId, To = toId, Kind = kind, File = _file, Line = line, Via = via });
     }
 
     private void EmitEdge(string fromDocId, INamedTypeSymbol target, string kind, int line)
