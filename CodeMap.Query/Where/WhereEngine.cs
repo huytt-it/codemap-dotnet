@@ -50,7 +50,7 @@ public static partial class WhereEngine
             list.Add((score, reason));
         }
 
-        ScoreTickets(index, queryTokens, Add);
+        ScoreTickets(index, query, queryTokens, Add);
         ScoreRoutesAndFeatures(index, queryTokens, Add);
         ScoreNameSubstrings(index, queryTokens, Add);
 
@@ -81,8 +81,10 @@ public static partial class WhereEngine
     }
 
     /// <summary>Source 2 (spec section 3): "ticket-files.jsonl — ticket cũ có mô tả tương tự đã sửa file nào". The only signal that can realistically bridge a natural-language query to English identifiers — a human already wrote that bridge once, in the commit message. It therefore only fires when the query is in the same language the team writes commits in.</summary>
-    private static void ScoreTickets(ImpactIndex index, HashSet<string> queryTokens, Action<string, double, string> add)
+    private static void ScoreTickets(ImpactIndex index, string query, HashSet<string> queryTokens, Action<string, double, string> add)
     {
+        var ticketIds = new TicketIdMatcher(query);
+
         // Symbol names get tokenized at most once per Search call, not once per (ticket, symbol) pair — on a
         // large codebase the same file (and its symbols) is touched by many tickets, and re-running the
         // tokenizer over identical input on every one of them was the dominant cost of this method.
@@ -97,7 +99,7 @@ public static partial class WhereEngine
         {
             var messageTokens = Tokenize(ticket.Message);
             var overlap = queryTokens.Where(messageTokens.Contains).ToList();
-            var exactTicketId = queryTokens.Any(t => t.TrimStart('#') == ticket.Ticket);
+            var exactTicketId = ticketIds.Names(ticket.Ticket);
             if (overlap.Count == 0 && !exactTicketId) continue;
 
             var baseScore = TicketWeight * (exactTicketId ? 1.0 : (double)overlap.Count / queryTokens.Count);
@@ -123,6 +125,73 @@ public static partial class WhereEngine
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Decides whether the query names a given ticket ID, working on the query text rather than on its tokens: the
+    /// tokenizer throws away '-', '_' and '#', so on tokens alone "SHO-1234" is just "sho" + "1234" and could never
+    /// equal the ID stored in ticket-files.jsonl.
+    /// Two rules, because the default pattern (CodeMapConfig.DefaultTicketPattern) stores digits only:
+    ///  - an ID containing a letter is a distinctive string, so it matches as a whole phrase, ignoring case;
+    ///  - an all-digit ID matches only right behind a marker the pattern itself recognises ('#', TICKET-, BUG-,
+    ///    JIRA-). A bare "500" or "2026" in a question is an HTTP status or a year far more often than a ticket,
+    ///    and treating it as one handed that ticket the maximum score.
+    /// Either way the match must not run into a neighbouring letter or digit ("#5000" is not ticket 500). `where`
+    /// does not read codemap.config.json, so this works from the IDs the index already holds, not from the pattern.
+    /// </summary>
+    private sealed class TicketIdMatcher
+    {
+        private readonly string _query;
+        private readonly HashSet<string> _markedNumbers = new(StringComparer.Ordinal);
+
+        public TicketIdMatcher(string query)
+        {
+            _query = Fold(query);
+            foreach (Match m in MarkedTicketNumber().Matches(_query))
+            {
+                // '#' may follow anything ("fix#500"), but a letter marker must start a word: "DEBUG-500" is not BUG-500.
+                var markerStartsWord = !char.IsLetter(m.Groups[1].Value[0]) || !IsWordRuneBefore(_query, m.Index);
+                if (markerStartsWord && !IsWordRuneAt(_query, m.Index + m.Length))
+                    _markedNumbers.Add(m.Groups[2].Value);
+            }
+        }
+
+        public bool Names(string ticketId)
+        {
+            var id = Fold(ticketId);
+            if (id.Length == 0) return false;
+            if (id.All(char.IsDigit)) return _markedNumbers.Contains(id);
+
+            for (var from = 0; from <= _query.Length - id.Length;)
+            {
+                var at = _query.IndexOf(id, from, StringComparison.OrdinalIgnoreCase);
+                if (at < 0) return false;
+                var end = at + id.Length;
+                // The edge only needs checking where the ID itself ends in a letter/digit; an ID that ends in
+                // '-' or '#' has already said where it stops.
+                var clearBefore = !char.IsLetterOrDigit(id[0]) || !IsWordRuneBefore(_query, at);
+                var clearAfter = !char.IsLetterOrDigit(id[^1]) || !IsWordRuneAt(_query, end);
+                if (clearBefore && clearAfter) return true;
+                from = at + 1;
+            }
+            return false;
+        }
+    }
+
+    [GeneratedRegex(@"(#|TICKET-|BUG-|JIRA-)(\p{Nd}+)", RegexOptions.IgnoreCase)]
+    private static partial Regex MarkedTicketNumber();
+
+    /// <summary>A letter or digit that would run into an ID next to it. CJK is excluded for the same reason
+    /// Tokenize splits at script boundaries: Japanese puts no space after "#4821を修正", so a kana next to the ID is
+    /// the end of the ID, not a continuation of it.</summary>
+    private static bool IsWordRuneAt(string text, int index) =>
+        index >= 0 && index < text.Length && Rune.TryGetRuneAt(text, index, out var rune) && Rune.IsLetterOrDigit(rune) && !IsCjk(rune);
+
+    private static bool IsWordRuneBefore(string text, int index)
+    {
+        if (index <= 0) return false;
+        var at = char.IsLowSurrogate(text[index - 1]) && index >= 2 ? index - 2 : index - 1;
+        return IsWordRuneAt(text, at);
     }
 
     /// <summary>Source 1 (spec section 3): "Tên feature phía FE và route API (orders/cancel gần ngôn ngữ nghiệp vụ hơn tên method)".</summary>
@@ -167,12 +236,14 @@ public static partial class WhereEngine
         return sym.ContainingType != null ? $"{sym.ContainingType}.{sym.Name}" : sym.Name;
     }
 
+    private static string Fold(string text) => text.IsNormalized(NormalizationForm.FormKC) ? text : text.Normalize(NormalizationForm.FormKC);
+
     internal static HashSet<string> Tokenize(string text)
     {
         // NFKC first: folds halfwidth katakana (ｷｬﾝｾﾙ) onto normal katakana (キャンセル), fullwidth Latin (Ｃａｎｃｅｌ)
         // onto ASCII, and composes Vietnamese diacritics — so the same word typed two different ways, by two
         // different people, over years of commit history, still produces the same tokens.
-        var normalized = text.IsNormalized(NormalizationForm.FormKC) ? text : text.Normalize(NormalizationForm.FormKC);
+        var normalized = Fold(text);
 
         var tokens = new List<string>();
         foreach (Match m in WordPattern().Matches(normalized))
