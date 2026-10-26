@@ -2,6 +2,7 @@ using CodeMap.Query.Models;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Operations;
 
 namespace CodeMap.Roslyn.Scan;
 
@@ -34,6 +35,10 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     private readonly Stack<ControllerInfo?> _controllerStack = new();
 
     public List<SymbolRecord> Symbols { get; } = new();
+
+    /// <summary>Compiler-generated parameterless constructors: symbols only if some edge targets one (ScanResults decides, it sees every file's edges).</summary>
+    public List<SymbolRecord> ImplicitConstructors { get; } = new();
+
     public List<EdgeRecord> DirectEdges { get; } = new();
     public List<UnresolvedBaseRef> UnresolvedBaseRefs { get; } = new();
 
@@ -42,6 +47,12 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
 
     /// <summary>(interfaceMemberDocId, implementingMemberDocId) — from INamedTypeSymbol.FindImplementationForInterfaceMember, drives the interface-expand edge pass.</summary>
     public List<(string InterfaceMemberId, string ImplMemberId)> InterfaceMemberMappings { get; } = new();
+
+    /// <summary>(overriddenMemberDocId, overridingMethodDocId, docIds of the overriding method's type and all its base types) — from IMethodSymbol.OverriddenMethod, drives the override-expand edge pass.</summary>
+    public List<(string OverriddenId, string OverrideId, List<string> OverrideTypeAndBaseIds)> OverrideMappings { get; } = new();
+
+    /// <summary>A call edge (or via:"delegate" edge) whose target is dispatched virtually — not `base.M()` — with its receiver's static type docId: what runs is an override at or below that type.</summary>
+    public List<(EdgeRecord Edge, string ReceiverTypeId)> VirtualCalls { get; } = new();
 
     /// <summary>(serviceTypeDocId, implementationTypeDocId) — DI-registration source for di.json (services.AddScoped&lt;IFoo, Foo&gt;(), etc.).</summary>
     public List<(string ServiceId, string ImplId)> DiRegistrations { get; } = new();
@@ -61,8 +72,8 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     /// <summary>(requestOrNotificationTypeDocId, handleMethodDocId) — from a type implementing IRequestHandler&lt;,&gt;/INotificationHandler&lt;&gt;, drives the mediator.Send/.Publish virtual-edge pass.</summary>
     public List<(string RequestTypeId, string HandleMethodId)> MediatrHandlerMappings { get; } = new();
 
-    /// <summary>(callSiteMemberDocId, constructedRequestOrNotificationTypeDocId, file, line) — a `mediator.Send(new FooCommand())` / `.Publish(new FooEvent())` call site.</summary>
-    public List<(string FromId, string ConstructedTypeId, string File, int Line)> MediatrSendSites { get; } = new();
+    /// <summary>(callSiteMemberDocId, requestOrNotificationTypeDocId, file, line) — a `mediator.Send(request)` / `.Publish(notification)` call site, keyed by the argument's static type.</summary>
+    public List<(string FromId, string RequestTypeId, string File, int Line)> MediatrSendSites { get; } = new();
 
     public SyntaxSymbolWalker(SemanticModel model, string project, string file, bool includeExternal, string? diAttributeName = null)
     {
@@ -87,8 +98,29 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
 
     public override void VisitEnumDeclaration(EnumDeclarationSyntax node)
     {
-        EmitTypeSymbol(node, "Enum", node.AttributeLists);
+        var symbol = EmitTypeSymbol(node, "Enum", node.AttributeLists);
+        if (symbol != null)
+        {
+            _typeStack.Push(DisplayName(symbol));
+            _typeIdStack.Push(symbol.GetDocumentationCommentId() ?? "");
+            _controllerStack.Push(null);
+        }
+
         base.VisitEnumDeclaration(node);
+
+        if (symbol != null)
+        {
+            _typeStack.Pop();
+            _typeIdStack.Pop();
+            _controllerStack.Pop();
+        }
+    }
+
+    /// <summary>`Level.High` is a read edge to F:N.Level.High; without a symbol for it, that edge dangled.</summary>
+    public override void VisitEnumMemberDeclaration(EnumMemberDeclarationSyntax node)
+    {
+        var id = EmitMemberSymbol(node, "EnumMember", node.AttributeLists);
+        WithMember(id, () => base.VisitEnumMemberDeclaration(node));
     }
 
     public override void VisitDelegateDeclaration(DelegateDeclarationSyntax node)
@@ -110,8 +142,26 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     {
         var id = EmitMemberSymbol(node, "Method", node.AttributeLists);
         if (id != null)
+        {
             TryRecordHttpActionEntryPoint(id, node);
+            RecordOverride(id, node);
+        }
+
         WithMember(id, () => base.VisitMethodDeclaration(node));
+    }
+
+    private void RecordOverride(string methodId, MethodDeclarationSyntax node)
+    {
+        if (_model.GetDeclaredSymbol(node) is not IMethodSymbol { OverriddenMethod: { } overridden } method) return;
+        var overriddenId = overridden.OriginalDefinition.GetDocumentationCommentId();
+        if (overriddenId == null) return;
+
+        var typeAndBaseIds = new List<string>();
+        for (INamedTypeSymbol? t = method.ContainingType; t != null; t = t.BaseType)
+            if (t.OriginalDefinition.GetDocumentationCommentId() is { } typeId)
+                typeAndBaseIds.Add(typeId);
+
+        OverrideMappings.Add((overriddenId, methodId, typeAndBaseIds));
     }
 
     public override void VisitConstructorDeclaration(ConstructorDeclarationSyntax node)
@@ -154,7 +204,20 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     public override void VisitMemberAccessExpression(MemberAccessExpressionSyntax node)
     {
         HandleMemberAccess(node);
+        HandleMethodGroup(node);
         base.VisitMemberAccessExpression(node);
+    }
+
+    public override void VisitIdentifierName(IdentifierNameSyntax node)
+    {
+        HandleMethodGroup(node);
+        base.VisitIdentifierName(node);
+    }
+
+    public override void VisitGenericName(GenericNameSyntax node)
+    {
+        HandleMethodGroup(node);
+        base.VisitGenericName(node);
     }
 
     /// <summary>Emits a symbol per declarator (Field/EventField), then visits ITS OWN initializer with that
@@ -214,6 +277,7 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         ControllerInfo? controller = null;
         if (symbol != null && kind is "Class" or "Struct" or "Record")
         {
+            EmitUnwrittenConstructors(symbol, node);
             RecordInterfaceMappings(symbol);
             TryRecordAttributeDiBinding(symbol);
             if (kind == "Class")
@@ -234,6 +298,44 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
             _typeStack.Pop();
             _typeIdStack.Pop();
             _controllerStack.Pop();
+        }
+    }
+
+    /// <summary>
+    /// The instance constructors a `new` can bind to that no ConstructorDeclaration declares, so
+    /// VisitConstructorDeclaration never emitted them and every `new` edge to them dangled. A primary constructor
+    /// (`record Person(string Name)`, C# 12 `class C(int id)`) is written by hand and always emitted. A class's or
+    /// struct's implicit parameterless one (DTOs and view models built with `new X { ... }`) only becomes a symbol
+    /// once ScanResults sees an edge to it — every class without a constructor has one, and listing them all would
+    /// mostly add noise. Placed at the type declaration, once for a partial type. A record's copy constructor is
+    /// left out: only `with` uses it, and that makes no edge.
+    /// </summary>
+    private void EmitUnwrittenConstructors(INamedTypeSymbol type, TypeDeclarationSyntax node)
+    {
+        var first = type.DeclaringSyntaxReferences.FirstOrDefault();
+        if (first == null || first.SyntaxTree != node.SyntaxTree || first.Span != node.Span) return;
+
+        foreach (var ctor in type.InstanceConstructors)
+        {
+            var isPrimary = ctor.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is TypeDeclarationSyntax);
+            var isRecordCopy = type.IsRecord && ctor.Parameters.Length == 1 && SymbolEqualityComparer.Default.Equals(ctor.Parameters[0].Type, type);
+            if (!isPrimary && !(ctor.IsImplicitlyDeclared && !isRecordCopy)) continue;
+
+            var id = ctor.GetDocumentationCommentId();
+            if (id == null) continue;
+
+            var record = new SymbolRecord
+            {
+                Id = id,
+                Kind = "Constructor",
+                Name = ctor.Name,
+                ContainingType = DisplayName(type),
+                Project = _project,
+                File = _file,
+                Line = LineOf(node),
+                Accessibility = ctor.DeclaredAccessibility.ToString(),
+            };
+            (isPrimary ? Symbols : ImplicitConstructors).Add(record);
         }
     }
 
@@ -345,16 +447,12 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
             if (startId != null) EntryPoints.Add(new EntryPoint(startId, "job"));
         }
 
-        var requestTypeId = TryGetMediatrRequestTypeId(type);
-        if (requestTypeId != null)
+        var handleIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (requestTypeId, handleId) in MediatrHandlersOf(type))
         {
-            var handleId = type.GetMembers().OfType<IMethodSymbol>()
-                .FirstOrDefault(m => m.Name == "Handle")?.OriginalDefinition.GetDocumentationCommentId();
-            if (handleId != null)
-            {
+            MediatrHandlerMappings.Add((requestTypeId, handleId));
+            if (handleIds.Add(handleId))
                 EntryPoints.Add(new EntryPoint(handleId, "handler"));
-                MediatrHandlerMappings.Add((requestTypeId, handleId));
-            }
         }
 
         if (ControllerStyleOf(type, classAttrLists) is not { } style) return null;
@@ -430,20 +528,45 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     private static bool ImplementsIHostedService(INamedTypeSymbol type)
         => type.AllInterfaces.Any(i => i.Name == "IHostedService");
 
-    /// <summary>If <paramref name="type"/> implements MediatR's IRequestHandler&lt;,&gt;/IRequestHandler&lt;&gt;/INotificationHandler&lt;&gt;, returns the docId of the request/notification type argument.</summary>
-    private static string? TryGetMediatrRequestTypeId(INamedTypeSymbol type)
+    /// <summary>
+    /// Every MediatR IRequestHandler&lt;,&gt;/IRequestHandler&lt;&gt;/INotificationHandler&lt;&gt; this type implements,
+    /// as (docId of the request/notification type argument, docId of the Handle method that handles it). One class
+    /// may handle several requests, one Handle overload each; before, only the first interface counted, mapped to
+    /// the first method named Handle.
+    /// Without a MediatR reference (L1, an unrestored L2) `class H : IRequestHandler&lt;GetX, int&gt;` doesn't resolve,
+    /// and Roslyn puts an unresolved type written FIRST in a class's base list in BaseType (it might be a class),
+    /// not in AllInterfaces — so those are looked at too, the same by-name match as for a resolved interface.
+    /// </summary>
+    private static IEnumerable<(string RequestTypeId, string HandleId)> MediatrHandlersOf(INamedTypeSymbol type)
     {
-        foreach (var iface in type.AllInterfaces)
+        var unresolvedBases = new List<INamedTypeSymbol>();
+        for (var t = type.BaseType; t != null; t = t.BaseType)
+            if (t.TypeKind == TypeKind.Error) unresolvedBases.Add(t);
+
+        foreach (var iface in type.AllInterfaces.Concat(unresolvedBases))
         {
             var isRequestHandler = iface.Name == "IRequestHandler" && iface.TypeArguments.Length is 1 or 2;
             var isNotificationHandler = iface.Name == "INotificationHandler" && iface.TypeArguments.Length == 1;
             if (!isRequestHandler && !isNotificationHandler) continue;
 
-            var id = iface.TypeArguments[0].OriginalDefinition.GetDocumentationCommentId();
-            if (id != null) return id;
+            var request = iface.TypeArguments[0];
+            var requestId = request.OriginalDefinition.GetDocumentationCommentId();
+            var handleId = HandleMethodFor(type, iface, request)?.OriginalDefinition.GetDocumentationCommentId();
+            if (requestId != null && handleId != null) yield return (requestId, handleId);
         }
+    }
 
-        return null;
+    /// <summary>The method implementing the handler interface's Handle when the interface resolved (L2, or MediatR's
+    /// shapes declared in source); else — an unresolved interface has no members — the type's own Handle whose
+    /// first parameter is the request.</summary>
+    private static IMethodSymbol? HandleMethodFor(INamedTypeSymbol type, INamedTypeSymbol handlerInterface, ITypeSymbol request)
+    {
+        var declared = handlerInterface.GetMembers("Handle").OfType<IMethodSymbol>().FirstOrDefault();
+        if (declared != null && type.FindImplementationForInterfaceMember(declared) is IMethodSymbol implementation)
+            return implementation;
+
+        return type.GetMembers("Handle").OfType<IMethodSymbol>()
+            .FirstOrDefault(m => m.Parameters.Length > 0 && SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, request));
     }
 
     private static readonly Dictionary<string, string> HttpVerbAttributeNames = new(StringComparer.Ordinal)
@@ -577,11 +700,12 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         });
 
     /// <summary>
-    /// Syntactic pattern match for `mediator.Send(new FooCommand())` / `.Publish(new FooEvent())` — same
-    /// philosophy as TryRecordDiRegistration: matches the well-known method names, doesn't require resolving
-    /// the real MediatR IMediator interface. Doesn't try to trace calls through a variable holding the command
-    /// (`var cmd = new FooCommand(); mediator.Send(cmd);`) — only the inline-construction form, which covers the
-    /// overwhelming majority of real MediatR usage.
+    /// Syntactic pattern match for `mediator.Send(request)` / `.Publish(notification)` — same philosophy as
+    /// TryRecordDiRegistration: matches the well-known method names, doesn't require resolving the real MediatR
+    /// IMediator interface. The request is keyed by the argument's static type, so `Send(new FooCommand())`, a
+    /// variable built earlier (`var cmd = new FooCommand(); mediator.Send(cmd)`) and a parameter all count; before,
+    /// only the inline `new` did, and eShop's every Send site passes a variable. An argument typed only as
+    /// IRequest/INotification (or a type parameter) matches no handler: what it holds isn't known here.
     /// </summary>
     private void TryRecordMediatrSend(InvocationExpressionSyntax node)
     {
@@ -589,20 +713,15 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         if (methodName is not ("Send" or "Publish")) return;
         if (node.ArgumentList.Arguments.Count == 0) return;
 
-        var constructedTypeId = node.ArgumentList.Arguments[0].Expression switch
-        {
-            ObjectCreationExpressionSyntax oce when _model.GetSymbolInfo(oce).Symbol is IMethodSymbol { MethodKind: MethodKind.Constructor } ctor
-                => ctor.ContainingType.OriginalDefinition.GetDocumentationCommentId(),
-            ImplicitObjectCreationExpressionSyntax ioce when _model.GetSymbolInfo(ioce).Symbol is IMethodSymbol { MethodKind: MethodKind.Constructor } ctor
-                => ctor.ContainingType.OriginalDefinition.GetDocumentationCommentId(),
-            _ => null,
-        };
-        if (constructedTypeId == null) return;
+        var requestTypeId = _model.GetTypeInfo(node.ArgumentList.Arguments[0].Expression).Type is INamedTypeSymbol { TypeKind: not TypeKind.Error } requestType
+            ? requestType.OriginalDefinition.GetDocumentationCommentId()
+            : null;
+        if (requestTypeId == null) return;
 
         var fromId = CurrentFromId();
         if (fromId == null) return;
 
-        MediatrSendSites.Add((fromId, constructedTypeId, _file, LineOf(node)));
+        MediatrSendSites.Add((fromId, requestTypeId, _file, LineOf(node)));
     }
 
     private INamedTypeSymbol? EmitTypeSymbol(SyntaxNode node, string kind, SyntaxList<AttributeListSyntax> attrLists)
@@ -684,13 +803,85 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
 
     private void HandleInvocation(InvocationExpressionSyntax node)
     {
-        if (_model.GetSymbolInfo(node).Symbol is not IMethodSymbol method) return; // unresolved overload/dynamic — don't guess
-        EmitMemberEdge(method, "call", LineOf(node));
+        if (BoundMethod(node) is not { } method) return;
+        var edge = EmitMemberEdge(method, "call", LineOf(node));
+        if (edge == null || !IsOverridable(method)) return;
+
+        if (_model.GetOperation(node) is IInvocationOperation invocation)
+            RecordVirtualCall(edge, method, invocation.IsVirtual, invocation.Instance);
+        else // bound to a sole candidate (BoundMethod): an invalid operation, so only the syntax can tell `base.M()`
+            RecordVirtualCall(edge, method, node.Expression is not MemberAccessExpressionSyntax { Expression: BaseExpressionSyntax }, null);
+    }
+
+    /// <summary>A class member an override can replace. An interface member is abstract too, but what runs there is an implementation — the interface pass's business.</summary>
+    private static bool IsOverridable(IMethodSymbol method)
+        => method.ContainingType.TypeKind != TypeKind.Interface && (method.IsVirtual || method.IsAbstract || method.IsOverride);
+
+    /// <summary>
+    /// Records a call that dispatches virtually, for the override-expand pass. `base.M()` doesn't (IsVirtual false):
+    /// it runs exactly the member named. The receiver's static type bounds which overrides can run — through an
+    /// OrderRepository, never CustomerRepository's; when it isn't a named type (a type parameter) or isn't known,
+    /// the called member's own type is used, which bounds nothing.
+    /// </summary>
+    private void RecordVirtualCall(EdgeRecord edge, IMethodSymbol method, bool isVirtual, IOperation? instance)
+    {
+        if (!isVirtual) return;
+        var receiver = instance?.Type as INamedTypeSymbol ?? method.ContainingType;
+        if (receiver.OriginalDefinition.GetDocumentationCommentId() is { } receiverId)
+            VirtualCalls.Add((edge, receiverId));
+    }
+
+    /// <summary>
+    /// The method a call or `new` binds to. When an argument's type doesn't resolve (at L1: anything built from a
+    /// NuGet type, like `User.Identity.Name` over an unresolved ControllerBase), Roslyn reports an overload
+    /// resolution failure with no Symbol even if the method has one overload and the target is not in doubt; that
+    /// sole candidate is taken. Several candidates would be a guess and stay unbound, as does dynamic.
+    /// </summary>
+    private IMethodSymbol? BoundMethod(ExpressionSyntax node)
+    {
+        var info = _model.GetSymbolInfo(node);
+        var symbol = info.Symbol
+            ?? (info.CandidateReason == CandidateReason.OverloadResolutionFailure && info.CandidateSymbols.Length == 1
+                ? info.CandidateSymbols[0]
+                : null);
+        return symbol as IMethodSymbol;
+    }
+
+    /// <summary>
+    /// A method named without being invoked — `xs.Select(MapToDto)`, `Clicked += OnClick`, `new Func&lt;int&gt;(M)`,
+    /// `Run(Work)` — is converted to a delegate that something else invokes later, so the code handing it over is
+    /// the closest static caller there is. Emitted as a `call` edge marked via:"delegate": the method may run
+    /// later, more than once, or never. Roslyn models exactly this conversion as an IMethodReferenceOperation;
+    /// the callee of an ordinary `M()` never is one, so a plain call is not counted twice. `Clicked -= OnClick`
+    /// is skipped: it takes the handler out, nothing runs because of it.
+    /// </summary>
+    private void HandleMethodGroup(ExpressionSyntax node)
+    {
+        // Cheap syntactic exclusions before asking for the operation: the callee of an invocation, and the Name
+        // half of `x.M` (the member access as a whole is the method group, and is visited on its own).
+        if (node.Parent is InvocationExpressionSyntax invocation && invocation.Expression == node) return;
+        if (node.Parent is MemberAccessExpressionSyntax access && access.Name == node) return;
+        if (node.Parent is AssignmentExpressionSyntax assignment && assignment.Right == node &&
+            assignment.IsKind(SyntaxKind.SubtractAssignmentExpression)) return;
+        // Every identifier comes through here; only one that binds to a method is worth building operations for.
+        if (_model.GetSymbolInfo(node).Symbol is not IMethodSymbol) return;
+
+        var reference = _model.GetOperation(node) switch
+        {
+            IMethodReferenceOperation r => r,
+            IDelegateCreationOperation { Target: IMethodReferenceOperation r } => r,
+            _ => null,
+        };
+        if (reference == null) return;
+
+        var edge = EmitMemberEdge(reference.Method, "call", LineOf(node), via: "delegate");
+        if (edge != null && IsOverridable(reference.Method))
+            RecordVirtualCall(edge, reference.Method, reference.IsVirtual, reference.Instance);
     }
 
     private void HandleObjectCreation(BaseObjectCreationExpressionSyntax node)
     {
-        if (_model.GetSymbolInfo(node).Symbol is not IMethodSymbol { MethodKind: MethodKind.Constructor } ctor) return;
+        if (BoundMethod(node) is not { MethodKind: MethodKind.Constructor } ctor) return;
         EmitMemberEdge(ctor, "new", LineOf(node));
     }
 
@@ -703,13 +894,13 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         EmitMemberEdge(symbol, kind, LineOf(node));
     }
 
-    private void EmitMemberEdge(ISymbol target, string kind, int line)
+    private EdgeRecord? EmitMemberEdge(ISymbol target, string kind, int line, string? via = null)
     {
         var declaredInSolution = target.Locations.Any(l => l.IsInSource);
-        if (!declaredInSolution && !_includeExternal) return;
+        if (!declaredInSolution && !_includeExternal) return null;
 
         var fromId = CurrentFromId();
-        if (fromId == null) return;
+        if (fromId == null) return null;
 
         // `"a".Ext(1)` binds to the REDUCED extension method — a synthesized symbol whose docId drops the `this`
         // parameter (M:N.E.Ext(System.Int32), not the declared M:N.E.Ext(System.String,System.Int32); for a
@@ -719,9 +910,11 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         if (target is IMethodSymbol { ReducedFrom: { } declared }) target = declared;
 
         var toId = target.OriginalDefinition.GetDocumentationCommentId();
-        if (toId == null) return;
+        if (toId == null) return null;
 
-        DirectEdges.Add(new EdgeRecord { From = fromId, To = toId, Kind = kind, File = _file, Line = line });
+        var edge = new EdgeRecord { From = fromId, To = toId, Kind = kind, File = _file, Line = line, Via = via };
+        DirectEdges.Add(edge);
+        return edge;
     }
 
     private void EmitEdge(string fromDocId, INamedTypeSymbol target, string kind, int line)

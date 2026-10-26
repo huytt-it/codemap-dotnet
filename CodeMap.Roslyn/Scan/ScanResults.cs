@@ -17,12 +17,15 @@ internal sealed class ScanResults
     public List<EdgeRecord> Edges { get; } = new();
     public List<EntryPoint> EntryPoints { get; } = new();
 
+    private readonly List<SymbolRecord> _implicitConstructors = new();
     private readonly List<(string InterfaceId, string ImplId)> _interfaceImpls = new();
     private readonly List<(string InterfaceMemberId, string ImplMemberId)> _interfaceMemberMaps = new();
+    private readonly List<(string OverriddenId, string OverrideId, List<string> OverrideTypeAndBaseIds)> _overrideMaps = new();
+    private readonly List<(EdgeRecord Edge, string ReceiverTypeId)> _virtualCalls = new();
     private readonly List<(string ServiceId, string ImplId)> _diRegistrations = new();
     private readonly List<(string ServiceId, string ImplId)> _attributeDiBindings = new();
     private readonly List<(string RequestTypeId, string HandleMethodId)> _mediatrHandlerMaps = new();
-    private readonly List<(string FromId, string ConstructedTypeId, string File, int Line)> _mediatrSendSites = new();
+    private readonly List<(string FromId, string RequestTypeId, string File, int Line)> _mediatrSendSites = new();
 
     /// <summary>codemap.config.json from the solution directory upward; a malformed one is reported and replaced by defaults rather than failing the scan.</summary>
     public static CodeMapConfig LoadConfig(string solutionDir)
@@ -41,10 +44,13 @@ internal sealed class ScanResults
     public void Add(SyntaxSymbolWalker walker, string project, DiagnosticsModel diagnostics, string unresolvedBaseTypeReason)
     {
         Symbols.AddRange(walker.Symbols);
+        _implicitConstructors.AddRange(walker.ImplicitConstructors);
         Edges.AddRange(walker.DirectEdges);
         EntryPoints.AddRange(walker.EntryPoints);
         _interfaceImpls.AddRange(walker.InterfaceImplementations);
         _interfaceMemberMaps.AddRange(walker.InterfaceMemberMappings);
+        _overrideMaps.AddRange(walker.OverrideMappings);
+        _virtualCalls.AddRange(walker.VirtualCalls);
         _diRegistrations.AddRange(walker.DiRegistrations);
         _attributeDiBindings.AddRange(walker.AttributeDiBindings);
         _mediatrHandlerMaps.AddRange(walker.MediatrHandlerMappings);
@@ -67,11 +73,13 @@ internal sealed class ScanResults
     public int CompleteAndWrite(string indexDir, CodeMapConfig config, DiagnosticsModel diagnostics)
     {
         ExpandCallsThroughInterfaces(Edges, _interfaceMemberMaps);
+        ExpandCallsThroughOverrides(Edges, _virtualCalls, _overrideMaps);
 
         DetectDiRegistrationConflicts(_attributeDiBindings, _diRegistrations, diagnostics);
         var (diMap, diConfirmedMap) = BuildDiJson(_interfaceImpls, _diRegistrations, _attributeDiBindings, config.DiManualOverrides, diagnostics);
-        AddCrossProjectDuplicateDiagnostics(Symbols, diagnostics);
         ExpandMediatrSendEdges(Edges, _mediatrSendSites, _mediatrHandlerMaps);
+        AddTargetedImplicitConstructors(Symbols, _implicitConstructors, Edges);
+        AddCrossProjectDuplicateDiagnostics(Symbols, diagnostics);
 
         JsonlWriter.Write(Path.Combine(indexDir, "symbols.jsonl"), Symbols);
         JsonlWriter.Write(Path.Combine(indexDir, "edges.jsonl"), Edges);
@@ -82,21 +90,29 @@ internal sealed class ScanResults
         return diMap.Count;
     }
 
-    /// <summary>Resolves each `mediator.Send(new FooCommand())` / `.Publish(new FooEvent())` call site to the matching handler's Handle method, emitting a `call` edge marked via:"mediatr" (spec section 5, "Entry point").</summary>
+    /// <summary>Resolves each `mediator.Send(request)` / `.Publish(notification)` call site to every matching handler's Handle method — a notification usually has several — emitting a `call` edge marked via:"mediatr" to each (spec section 5, "Entry point").</summary>
     private static void ExpandMediatrSendEdges(
         List<EdgeRecord> edges,
-        List<(string FromId, string ConstructedTypeId, string File, int Line)> sendSites,
+        List<(string FromId, string RequestTypeId, string File, int Line)> sendSites,
         List<(string RequestTypeId, string HandleMethodId)> handlerMappings)
     {
-        var handleMethodByRequestType = handlerMappings
+        var handleMethodsByRequestType = handlerMappings
             .GroupBy(m => m.RequestTypeId, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.First().HandleMethodId, StringComparer.Ordinal);
+            .ToDictionary(g => g.Key, g => g.Select(m => m.HandleMethodId).Distinct(StringComparer.Ordinal).ToList(), StringComparer.Ordinal);
 
-        foreach (var (fromId, constructedTypeId, file, line) in sendSites)
+        foreach (var (fromId, requestTypeId, file, line) in sendSites)
         {
-            if (!handleMethodByRequestType.TryGetValue(constructedTypeId, out var handleId)) continue;
-            edges.Add(new EdgeRecord { From = fromId, To = handleId, Kind = "call", File = file, Line = line, Via = "mediatr" });
+            if (!handleMethodsByRequestType.TryGetValue(requestTypeId, out var handleIds)) continue;
+            foreach (var handleId in handleIds)
+                edges.Add(new EdgeRecord { From = fromId, To = handleId, Kind = "call", File = file, Line = line, Via = "mediatr" });
         }
+    }
+
+    /// <summary>A compiler-generated constructor becomes a symbol once something constructs it, so the `new` edge to it has somewhere to land (see SyntaxSymbolWalker.EmitUnwrittenConstructors).</summary>
+    private static void AddTargetedImplicitConstructors(List<SymbolRecord> symbols, List<SymbolRecord> implicitConstructors, List<EdgeRecord> edges)
+    {
+        var targets = edges.Select(e => e.To).ToHashSet(StringComparer.Ordinal);
+        symbols.AddRange(implicitConstructors.Where(c => targets.Contains(c.Id)));
     }
 
     /// <summary>Duplicates each `call` edge that targets an interface member into a new edge at each concrete implementation, marked via:"interface". Keeps the original edge too.</summary>
@@ -116,6 +132,46 @@ internal sealed class ScanResults
             {
                 if (implId == edge.To) continue; // the edge already targets this exact member (rare/defensive)
                 expanded.Add(new EdgeRecord { From = edge.From, To = implId, Kind = "call", File = edge.File, Line = edge.Line, Via = "interface" });
+            }
+        }
+
+        edges.AddRange(expanded);
+    }
+
+    /// <summary>
+    /// The class-hierarchy counterpart of ExpandCallsThroughInterfaces: a virtual call — `BaseRepository r;
+    /// r.Save()`, or `Save()` inside the base itself — binds to the abstract/virtual member, but what runs is an
+    /// override. Adds a `call` edge marked via:"override" to every override below the called member, transitively,
+    /// whose type is the receiver's static type or derives from it; keeps the original edge too. Only walker-direct
+    /// edges are expanded (the walker records which ones dispatch virtually; `base.M()` doesn't), so an edge the
+    /// interface pass produced is never expanded a second time — that pass already maps each implementing type to
+    /// its own override.
+    /// </summary>
+    private static void ExpandCallsThroughOverrides(
+        List<EdgeRecord> edges,
+        List<(EdgeRecord Edge, string ReceiverTypeId)> virtualCalls,
+        List<(string OverriddenId, string OverrideId, List<string> OverrideTypeAndBaseIds)> mappings)
+    {
+        var overridesOf = mappings
+            .GroupBy(m => m.OverriddenId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+
+        var expanded = new List<EdgeRecord>();
+        foreach (var (edge, receiverTypeId) in virtualCalls)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal) { edge.To };
+            var pending = new Queue<string>();
+            pending.Enqueue(edge.To);
+            while (pending.TryDequeue(out var member))
+            {
+                if (!overridesOf.TryGetValue(member, out var overrides)) continue;
+                foreach (var (_, overrideId, overrideTypeAndBaseIds) in overrides)
+                {
+                    if (!seen.Add(overrideId)) continue;
+                    pending.Enqueue(overrideId); // a type outside the receiver's subtree may still have one below it
+                    if (overrideTypeAndBaseIds.Contains(receiverTypeId, StringComparer.Ordinal))
+                        expanded.Add(new EdgeRecord { From = edge.From, To = overrideId, Kind = "call", File = edge.File, Line = edge.Line, Via = "override" });
+                }
             }
         }
 
