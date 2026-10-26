@@ -98,20 +98,107 @@ public class WhereEngineRankingTests
 
     private static ImpactIndex IndexWithOneTicket(string ticketId) =>
         BuildIndex(
-            symbols: new[] { ("M:Orders.OrderService.Cancel", "Cancel", "Orders.OrderService", "OrderService.cs") },
+            symbols: new[] { new Sym("M:Orders.OrderService.Cancel", "Cancel", "Orders.OrderService", "OrderService.cs") },
             tickets: new[] { new TicketFileRecord(ticketId, new() { "a1" }, "2026-06-14", UnrelatedMessage, new() { "OrderService.cs" }) });
+
+    // ---- splitting symbol names into words -----------------------------------------------------------------
+
+    [TestMethod]
+    public void A_word_inside_a_pascal_case_name_matches_the_symbol()
+    {
+        // "order" is a whole word of OrderService, but the old tokenizer kept the name as the single token
+        // "orderservice", so a query in plain words never touched it.
+        var index = BuildIndex(new Sym("M:Orders.OrderService.Cancel", "Cancel", "Orders.OrderService", "OrderService.cs"));
+
+        var results = WhereEngine.Search(index, "order");
+
+        Assert.AreEqual(1, results.Count);
+        Assert.AreEqual("M:Orders.OrderService.Cancel", results[0].SymbolId);
+    }
+
+    [TestMethod]
+    public void The_whole_identifier_still_matches_next_to_its_parts()
+    {
+        var index = BuildIndex(new Sym("M:Orders.OrderService.Cancel", "Cancel", "Orders.OrderService", "OrderService.cs"));
+
+        // Both spellings of the same words earn the same score: one query token, one hit.
+        var typed = WhereEngine.Search(index, "OrderService");
+        var spaced = WhereEngine.Search(index, "order service");
+
+        Assert.AreEqual(1, typed.Count);
+        Assert.AreEqual(1, spaced.Count);
+        Assert.AreEqual(typed[0].Score, spaced[0].Score);
+    }
+
+    [DataTestMethod]
+    [DataRow("OrderService", "orderservice", "order", "service")]
+    [DataRow("XMLParser", "xmlparser", "xml", "parser")]            // an acronym stays whole, the word after it splits off
+    [DataRow("parseHttpResponse", "parsehttpresponse", "parse", "http", "response")]
+    [DataRow("Base64Encoder", "base64encoder", "base64", "encoder")] // digits stay with the word they follow
+    [DataRow("Cancel_Order", "cancel", "order")]                     // '_' was already a separator
+    [DataRow("ĐơnHàng", "đơnhàng", "đơn", "hàng")]
+    [DataRow("ORDER", "order")]                                       // nothing to split
+    [DataRow("order", "order")]
+    public void A_name_yields_its_whole_form_and_its_words(string name, params string[] expected)
+    {
+        CollectionAssert.AreEquivalent(expected, WhereEngine.NameTokens(name).ToList());
+    }
+
+    [TestMethod]
+    public void The_named_directly_bonus_is_not_earned_by_the_words_of_a_name_appearing_separately()
+    {
+        // The bonus asks "does the message name this symbol". Splitting OrderService into order + service must not
+        // let a message that merely says "order service" in prose count as naming it.
+        var index = BuildIndex(
+            symbols: new[]
+            {
+                new Sym("T:Orders.OrderService", "OrderService", null, "OrderService.cs", Kind: "Class"),
+                new Sym("M:Orders.OrderService.Cancel", "Cancel", "Orders.OrderService", "OrderService.cs"),
+            },
+            tickets: new[] { new TicketFileRecord("4821", new() { "a1" }, "2026-06-14", "hủy đơn hàng - refactor order service flow", new() { "OrderService.cs" }) });
+
+        var results = WhereEngine.Search(index, "hủy đơn hàng");
+
+        Assert.AreEqual(2, results.Count);
+        Assert.AreEqual(results[0].Score, results[1].Score, "neither symbol is named in the message");
+        Assert.IsFalse(results.Any(r => r.Reasons.Any(reason => reason.Contains("names this symbol directly"))));
+    }
+
+    [TestMethod]
+    public void A_message_naming_one_identifier_does_not_award_the_bonus_to_a_shorter_one_inside_it()
+    {
+        // "sửa OrderService" names OrderService. Order is one of its words, and must not be treated as named too.
+        var index = BuildIndex(
+            symbols: new[]
+            {
+                new Sym("T:Orders.OrderService", "OrderService", null, "OrderService.cs", Kind: "Class"),
+                new Sym("T:Orders.Order", "Order", null, "OrderService.cs", Kind: "Class"),
+            },
+            tickets: new[] { new TicketFileRecord("4821", new() { "a1" }, "2026-06-14", "hủy đơn hàng - sửa OrderService", new() { "OrderService.cs" }) });
+
+        var results = WhereEngine.Search(index, "hủy đơn hàng");
+
+        var service = results.Single(r => r.SymbolId == "T:Orders.OrderService");
+        var order = results.Single(r => r.SymbolId == "T:Orders.Order");
+        Assert.IsTrue(service.Score > order.Score);
+        Assert.IsFalse(order.Reasons.Any(reason => reason.Contains("names this symbol directly")));
+    }
 
     // ---- helpers ------------------------------------------------------------------------------------------
 
+    private sealed record Sym(string Id, string Name, string? ContainingType, string File, string Kind = "Method");
+
+    private static ImpactIndex BuildIndex(params Sym[] symbols) => BuildIndex(symbols, null, null);
+
     private static ImpactIndex BuildIndex(
-        (string Id, string Name, string ContainingType, string File)[] symbols,
+        Sym[] symbols,
         IEnumerable<TicketFileRecord>? tickets = null,
         IEnumerable<EntryPoint>? entryPoints = null)
     {
         var symbolRecords = symbols.Select(s => new SymbolRecord
         {
             Id = s.Id,
-            Kind = "Method",
+            Kind = s.Kind,
             Name = s.Name,
             ContainingType = s.ContainingType,
             Project = "TestProject",

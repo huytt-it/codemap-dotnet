@@ -114,7 +114,8 @@ public static partial class WhereEngine
                     // Tokenize the name rather than lowercasing it: that way an identifier written fullwidth in
                     // the message still matches (NFKC), and a non-Latin identifier is compared bigram-to-bigram
                     // like everything else. Empty means the name was too short to survive tokenizing — no bonus,
-                    // otherwise "all tokens present" would be vacuously true for every symbol.
+                    // otherwise "all tokens present" would be vacuously true for every symbol. Unsplit on purpose
+                    // (see NameTokens): the message has to name the identifier, not just contain its words.
                     var nameTokens = NameTokensOf(symbol);
                     var namedInMessage = nameTokens.Count > 0 && nameTokens.All(messageTokens.Contains);
                     var score = namedInMessage ? baseScore * NamedInTicketBonus : baseScore;
@@ -217,13 +218,13 @@ public static partial class WhereEngine
         }
     }
 
-    /// <summary>Source 3 (spec section 3): "Tên type/method khớp chuỗi con" — weakest signal, mainly useful when the query is already code-like (an English term, a class name).</summary>
+    /// <summary>Source 3 (spec section 3): "Tên type/method khớp chuỗi con" — weakest signal, mainly useful when the query is already code-like (an English term, a class name). A name counts both as the whole identifier and as its words (<see cref="NameTokens"/>), so "order" finds OrderService.</summary>
     private static void ScoreNameSubstrings(ImpactIndex index, HashSet<string> queryTokens, Action<string, double, string> add)
     {
         foreach (var symbol in index.SymbolsById.Values)
         {
             var displayName = symbol.ContainingType != null ? $"{symbol.ContainingType}.{symbol.Name}" : symbol.Name;
-            var overlap = queryTokens.Where(Tokenize(displayName).Contains).ToList();
+            var overlap = queryTokens.Where(NameTokens(displayName).Contains).ToList();
             if (overlap.Count > 0)
                 add(symbol.Id, NameWeight * overlap.Count / queryTokens.Count, $"Symbol name shares term(s) [{string.Join(", ", overlap)}]");
         }
@@ -238,7 +239,19 @@ public static partial class WhereEngine
 
     private static string Fold(string text) => text.IsNormalized(NormalizationForm.FormKC) ? text : text.Normalize(NormalizationForm.FormKC);
 
-    internal static HashSet<string> Tokenize(string text)
+    internal static HashSet<string> Tokenize(string text) => Tokenize(text, splitIdentifiers: false);
+
+    /// <summary>
+    /// Tokens of a symbol name: everything <see cref="Tokenize(string)"/> gives, plus the words inside each
+    /// PascalCase/camelCase identifier. "Orders.OrderService.Cancel" yields orders, orderservice, order, service,
+    /// cancel — so the query "order" reaches OrderService, and the whole identifier "OrderService" still matches too.
+    /// Only for names matched *against* the query. The named-in-ticket test deliberately keeps the unsplit
+    /// <see cref="Tokenize(string)"/>: asking whether a message names a symbol is a statement about the identifier,
+    /// and with words in play a message about OrderService would also "name" a class called Order.
+    /// </summary>
+    internal static HashSet<string> NameTokens(string name) => Tokenize(name, splitIdentifiers: true);
+
+    private static HashSet<string> Tokenize(string text, bool splitIdentifiers)
     {
         // NFKC first: folds halfwidth katakana (ｷｬﾝｾﾙ) onto normal katakana (キャンセル), fullwidth Latin (Ｃａｎｃｅｌ)
         // onto ASCII, and composes Vietnamese diacritics — so the same word typed two different ways, by two
@@ -247,7 +260,7 @@ public static partial class WhereEngine
 
         var tokens = new List<string>();
         foreach (Match m in WordPattern().Matches(normalized))
-            AppendRunTokens(m.Value, tokens);
+            AppendRunTokens(m.Value, splitIdentifiers, tokens);
         // A set, not a list: every caller only ever asks "does this token occur" (Contains/All), and on a large
         // codebase this same set is tested against thousands of query tokens per ticket — O(1) membership beats
         // a linear scan repeated that many times over.
@@ -261,7 +274,7 @@ public static partial class WhereEngine
     /// script boundary (which also separates "キャンセルOrderService" into its two halves) and tokenize each part
     /// by its own rules.
     /// </summary>
-    private static void AppendRunTokens(string run, List<string> tokens)
+    private static void AppendRunTokens(string run, bool splitIdentifiers, List<string> tokens)
     {
         var runes = run.EnumerateRunes().ToList(); // rune, not char: rare kanji live above the BMP as surrogate pairs
         var i = 0;
@@ -274,10 +287,41 @@ public static partial class WhereEngine
             if (isCjk) AppendCjkBigrams(runes, start, i, tokens);
             else
             {
-                var segment = string.Concat(runes.GetRange(start, i - start)).ToLowerInvariant();
-                if (segment.Length >= 2) tokens.Add(segment); // drop "a"/"I"/"1" noise, same as before
+                var segment = string.Concat(runes.GetRange(start, i - start));
+                AppendWord(segment, tokens);
+                if (splitIdentifiers)
+                    foreach (var word in SplitIdentifier(segment)) AppendWord(word, tokens);
             }
         }
+    }
+
+    private static void AppendWord(string word, List<string> tokens)
+    {
+        var lowered = word.ToLowerInvariant();
+        if (lowered.Length >= 2) tokens.Add(lowered); // drop "a"/"I"/"1" noise, same as before
+    }
+
+    /// <summary>
+    /// The words inside one PascalCase/camelCase identifier: a capital after a lowercase letter or digit starts a
+    /// word (order|Service, Base64|Encoder), and so does the last capital of an acronym when a lowercase letter
+    /// follows it (XML|Parser). Digits stay with the word before them — "Base64" is one word, and "Md|5" would
+    /// only produce a one-character token that gets dropped anyway. '_' needs no handling here: it is not a
+    /// letter or digit, so the word pattern has already cut the identifier there.
+    /// </summary>
+    private static IEnumerable<string> SplitIdentifier(string identifier)
+    {
+        var start = 0;
+        for (var i = 1; i < identifier.Length; i++)
+        {
+            var prev = identifier[i - 1];
+            var startsWord = char.IsUpper(identifier[i]) &&
+                (char.IsLower(prev) || char.IsDigit(prev) ||
+                 (char.IsUpper(prev) && i + 1 < identifier.Length && char.IsLower(identifier[i + 1])));
+            if (!startsWord) continue;
+            yield return identifier[start..i];
+            start = i;
+        }
+        yield return identifier[start..];
     }
 
     /// <summary>
