@@ -72,8 +72,8 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     /// <summary>(requestOrNotificationTypeDocId, handleMethodDocId) — from a type implementing IRequestHandler&lt;,&gt;/INotificationHandler&lt;&gt;, drives the mediator.Send/.Publish virtual-edge pass.</summary>
     public List<(string RequestTypeId, string HandleMethodId)> MediatrHandlerMappings { get; } = new();
 
-    /// <summary>(callSiteMemberDocId, constructedRequestOrNotificationTypeDocId, file, line) — a `mediator.Send(new FooCommand())` / `.Publish(new FooEvent())` call site.</summary>
-    public List<(string FromId, string ConstructedTypeId, string File, int Line)> MediatrSendSites { get; } = new();
+    /// <summary>(callSiteMemberDocId, requestOrNotificationTypeDocId, file, line) — a `mediator.Send(request)` / `.Publish(notification)` call site, keyed by the argument's static type.</summary>
+    public List<(string FromId, string RequestTypeId, string File, int Line)> MediatrSendSites { get; } = new();
 
     public SyntaxSymbolWalker(SemanticModel model, string project, string file, bool includeExternal, string? diAttributeName = null)
     {
@@ -700,11 +700,12 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         });
 
     /// <summary>
-    /// Syntactic pattern match for `mediator.Send(new FooCommand())` / `.Publish(new FooEvent())` — same
-    /// philosophy as TryRecordDiRegistration: matches the well-known method names, doesn't require resolving
-    /// the real MediatR IMediator interface. Doesn't try to trace calls through a variable holding the command
-    /// (`var cmd = new FooCommand(); mediator.Send(cmd);`) — only the inline-construction form, which covers the
-    /// overwhelming majority of real MediatR usage.
+    /// Syntactic pattern match for `mediator.Send(request)` / `.Publish(notification)` — same philosophy as
+    /// TryRecordDiRegistration: matches the well-known method names, doesn't require resolving the real MediatR
+    /// IMediator interface. The request is keyed by the argument's static type, so `Send(new FooCommand())`, a
+    /// variable built earlier (`var cmd = new FooCommand(); mediator.Send(cmd)`) and a parameter all count; before,
+    /// only the inline `new` did, and eShop's every Send site passes a variable. An argument typed only as
+    /// IRequest/INotification (or a type parameter) matches no handler: what it holds isn't known here.
     /// </summary>
     private void TryRecordMediatrSend(InvocationExpressionSyntax node)
     {
@@ -712,16 +713,15 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         if (methodName is not ("Send" or "Publish")) return;
         if (node.ArgumentList.Arguments.Count == 0) return;
 
-        var constructedTypeId = node.ArgumentList.Arguments[0].Expression is BaseObjectCreationExpressionSyntax creation &&
-                                BoundMethod(creation) is { MethodKind: MethodKind.Constructor } ctor
-            ? ctor.ContainingType.OriginalDefinition.GetDocumentationCommentId()
+        var requestTypeId = _model.GetTypeInfo(node.ArgumentList.Arguments[0].Expression).Type is INamedTypeSymbol { TypeKind: not TypeKind.Error } requestType
+            ? requestType.OriginalDefinition.GetDocumentationCommentId()
             : null;
-        if (constructedTypeId == null) return;
+        if (requestTypeId == null) return;
 
         var fromId = CurrentFromId();
         if (fromId == null) return;
 
-        MediatrSendSites.Add((fromId, constructedTypeId, _file, LineOf(node)));
+        MediatrSendSites.Add((fromId, requestTypeId, _file, LineOf(node)));
     }
 
     private INamedTypeSymbol? EmitTypeSymbol(SyntaxNode node, string kind, SyntaxList<AttributeListSyntax> attrLists)

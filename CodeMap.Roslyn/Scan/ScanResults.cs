@@ -25,7 +25,7 @@ internal sealed class ScanResults
     private readonly List<(string ServiceId, string ImplId)> _diRegistrations = new();
     private readonly List<(string ServiceId, string ImplId)> _attributeDiBindings = new();
     private readonly List<(string RequestTypeId, string HandleMethodId)> _mediatrHandlerMaps = new();
-    private readonly List<(string FromId, string ConstructedTypeId, string File, int Line)> _mediatrSendSites = new();
+    private readonly List<(string FromId, string RequestTypeId, string File, int Line)> _mediatrSendSites = new();
 
     /// <summary>codemap.config.json from the solution directory upward; a malformed one is reported and replaced by defaults rather than failing the scan.</summary>
     public static CodeMapConfig LoadConfig(string solutionDir)
@@ -90,19 +90,19 @@ internal sealed class ScanResults
         return diMap.Count;
     }
 
-    /// <summary>Resolves each `mediator.Send(new FooCommand())` / `.Publish(new FooEvent())` call site to every matching handler's Handle method — a notification usually has several — emitting a `call` edge marked via:"mediatr" to each (spec section 5, "Entry point").</summary>
+    /// <summary>Resolves each `mediator.Send(request)` / `.Publish(notification)` call site to every matching handler's Handle method — a notification usually has several — emitting a `call` edge marked via:"mediatr" to each (spec section 5, "Entry point").</summary>
     private static void ExpandMediatrSendEdges(
         List<EdgeRecord> edges,
-        List<(string FromId, string ConstructedTypeId, string File, int Line)> sendSites,
+        List<(string FromId, string RequestTypeId, string File, int Line)> sendSites,
         List<(string RequestTypeId, string HandleMethodId)> handlerMappings)
     {
         var handleMethodsByRequestType = handlerMappings
             .GroupBy(m => m.RequestTypeId, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Select(m => m.HandleMethodId).Distinct(StringComparer.Ordinal).ToList(), StringComparer.Ordinal);
 
-        foreach (var (fromId, constructedTypeId, file, line) in sendSites)
+        foreach (var (fromId, requestTypeId, file, line) in sendSites)
         {
-            if (!handleMethodsByRequestType.TryGetValue(constructedTypeId, out var handleIds)) continue;
+            if (!handleMethodsByRequestType.TryGetValue(requestTypeId, out var handleIds)) continue;
             foreach (var handleId in handleIds)
                 edges.Add(new EdgeRecord { From = fromId, To = handleId, Kind = "call", File = file, Line = line, Via = "mediatr" });
         }

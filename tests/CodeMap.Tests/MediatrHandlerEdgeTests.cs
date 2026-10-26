@@ -43,6 +43,9 @@ public class MediatrHandlerEdgeTests
             public void Place(IMediator m) => m.Publish(new OrderPlaced());
             public void AskA(IMediator m) => m.Send(new GetA());
             public void AskB(IMediator m) => m.Send(new GetB());
+            public void AskViaVariable(IMediator m) { var query = new GetA(); m.Send(query); }
+            public void AskViaParameter(IMediator m, GetB query) => m.Send(query);
+            public void PublishAnything(IMediator m, INotification notification) => m.Publish(notification);
         }
         """;
 
@@ -63,6 +66,19 @@ public class MediatrHandlerEdgeTests
         var edge = TestAssert.Single(Results.Edges, e => e.From == from && e.Via == "mediatr");
         Assert.AreEqual(handle, edge.To);
     }
+
+    [DataTestMethod] // the request built earlier and passed in a variable or parameter: eShop's every Send site
+    [DataRow("M:M.Caller.AskViaVariable(M.IMediator)", "M:M.AbHandler.Handle(M.GetA)")]
+    [DataRow("M:M.Caller.AskViaParameter(M.IMediator,M.GetB)", "M:M.AbHandler.Handle(M.GetB)")]
+    public void Request_passed_in_a_variable_reaches_its_handler(string from, string handle)
+    {
+        var edge = TestAssert.Single(Results.Edges, e => e.From == from && e.Via == "mediatr");
+        Assert.AreEqual(handle, edge.To);
+    }
+
+    [TestMethod] // statically just an INotification: no handler is keyed on it, and guessing them all would be noise
+    public void Request_typed_only_by_its_interface_reaches_nothing()
+        => TestAssert.DoesNotContain(Results.Edges, e => e.From == "M:M.Caller.PublishAnything(M.IMediator,M.INotification)" && e.Via == "mediatr");
 
     [TestMethod]
     public void Every_Handle_of_a_multi_request_handler_is_an_entry_point()
