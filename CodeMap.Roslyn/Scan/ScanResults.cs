@@ -19,6 +19,8 @@ internal sealed class ScanResults
 
     private readonly List<(string InterfaceId, string ImplId)> _interfaceImpls = new();
     private readonly List<(string InterfaceMemberId, string ImplMemberId)> _interfaceMemberMaps = new();
+    private readonly List<(string OverriddenId, string OverrideId, List<string> OverrideTypeAndBaseIds)> _overrideMaps = new();
+    private readonly List<(EdgeRecord Edge, string ReceiverTypeId)> _virtualCalls = new();
     private readonly List<(string ServiceId, string ImplId)> _diRegistrations = new();
     private readonly List<(string ServiceId, string ImplId)> _attributeDiBindings = new();
     private readonly List<(string RequestTypeId, string HandleMethodId)> _mediatrHandlerMaps = new();
@@ -45,6 +47,8 @@ internal sealed class ScanResults
         EntryPoints.AddRange(walker.EntryPoints);
         _interfaceImpls.AddRange(walker.InterfaceImplementations);
         _interfaceMemberMaps.AddRange(walker.InterfaceMemberMappings);
+        _overrideMaps.AddRange(walker.OverrideMappings);
+        _virtualCalls.AddRange(walker.VirtualCalls);
         _diRegistrations.AddRange(walker.DiRegistrations);
         _attributeDiBindings.AddRange(walker.AttributeDiBindings);
         _mediatrHandlerMaps.AddRange(walker.MediatrHandlerMappings);
@@ -67,6 +71,7 @@ internal sealed class ScanResults
     public int CompleteAndWrite(string indexDir, CodeMapConfig config, DiagnosticsModel diagnostics)
     {
         ExpandCallsThroughInterfaces(Edges, _interfaceMemberMaps);
+        ExpandCallsThroughOverrides(Edges, _virtualCalls, _overrideMaps);
 
         DetectDiRegistrationConflicts(_attributeDiBindings, _diRegistrations, diagnostics);
         var (diMap, diConfirmedMap) = BuildDiJson(_interfaceImpls, _diRegistrations, _attributeDiBindings, config.DiManualOverrides, diagnostics);
@@ -117,6 +122,46 @@ internal sealed class ScanResults
             {
                 if (implId == edge.To) continue; // the edge already targets this exact member (rare/defensive)
                 expanded.Add(new EdgeRecord { From = edge.From, To = implId, Kind = "call", File = edge.File, Line = edge.Line, Via = "interface" });
+            }
+        }
+
+        edges.AddRange(expanded);
+    }
+
+    /// <summary>
+    /// The class-hierarchy counterpart of ExpandCallsThroughInterfaces: a virtual call — `BaseRepository r;
+    /// r.Save()`, or `Save()` inside the base itself — binds to the abstract/virtual member, but what runs is an
+    /// override. Adds a `call` edge marked via:"override" to every override below the called member, transitively,
+    /// whose type is the receiver's static type or derives from it; keeps the original edge too. Only walker-direct
+    /// edges are expanded (the walker records which ones dispatch virtually; `base.M()` doesn't), so an edge the
+    /// interface pass produced is never expanded a second time — that pass already maps each implementing type to
+    /// its own override.
+    /// </summary>
+    private static void ExpandCallsThroughOverrides(
+        List<EdgeRecord> edges,
+        List<(EdgeRecord Edge, string ReceiverTypeId)> virtualCalls,
+        List<(string OverriddenId, string OverrideId, List<string> OverrideTypeAndBaseIds)> mappings)
+    {
+        var overridesOf = mappings
+            .GroupBy(m => m.OverriddenId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+
+        var expanded = new List<EdgeRecord>();
+        foreach (var (edge, receiverTypeId) in virtualCalls)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal) { edge.To };
+            var pending = new Queue<string>();
+            pending.Enqueue(edge.To);
+            while (pending.TryDequeue(out var member))
+            {
+                if (!overridesOf.TryGetValue(member, out var overrides)) continue;
+                foreach (var (_, overrideId, overrideTypeAndBaseIds) in overrides)
+                {
+                    if (!seen.Add(overrideId)) continue;
+                    pending.Enqueue(overrideId); // a type outside the receiver's subtree may still have one below it
+                    if (overrideTypeAndBaseIds.Contains(receiverTypeId, StringComparer.Ordinal))
+                        expanded.Add(new EdgeRecord { From = edge.From, To = overrideId, Kind = "call", File = edge.File, Line = edge.Line, Via = "override" });
+                }
             }
         }
 

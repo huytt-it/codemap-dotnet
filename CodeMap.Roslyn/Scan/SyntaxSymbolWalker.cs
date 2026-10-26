@@ -44,6 +44,12 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     /// <summary>(interfaceMemberDocId, implementingMemberDocId) — from INamedTypeSymbol.FindImplementationForInterfaceMember, drives the interface-expand edge pass.</summary>
     public List<(string InterfaceMemberId, string ImplMemberId)> InterfaceMemberMappings { get; } = new();
 
+    /// <summary>(overriddenMemberDocId, overridingMethodDocId, docIds of the overriding method's type and all its base types) — from IMethodSymbol.OverriddenMethod, drives the override-expand edge pass.</summary>
+    public List<(string OverriddenId, string OverrideId, List<string> OverrideTypeAndBaseIds)> OverrideMappings { get; } = new();
+
+    /// <summary>A call edge (or via:"delegate" edge) whose target is dispatched virtually — not `base.M()` — with its receiver's static type docId: what runs is an override at or below that type.</summary>
+    public List<(EdgeRecord Edge, string ReceiverTypeId)> VirtualCalls { get; } = new();
+
     /// <summary>(serviceTypeDocId, implementationTypeDocId) — DI-registration source for di.json (services.AddScoped&lt;IFoo, Foo&gt;(), etc.).</summary>
     public List<(string ServiceId, string ImplId)> DiRegistrations { get; } = new();
 
@@ -111,8 +117,26 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     {
         var id = EmitMemberSymbol(node, "Method", node.AttributeLists);
         if (id != null)
+        {
             TryRecordHttpActionEntryPoint(id, node);
+            RecordOverride(id, node);
+        }
+
         WithMember(id, () => base.VisitMethodDeclaration(node));
+    }
+
+    private void RecordOverride(string methodId, MethodDeclarationSyntax node)
+    {
+        if (_model.GetDeclaredSymbol(node) is not IMethodSymbol { OverriddenMethod: { } overridden } method) return;
+        var overriddenId = overridden.OriginalDefinition.GetDocumentationCommentId();
+        if (overriddenId == null) return;
+
+        var typeAndBaseIds = new List<string>();
+        for (INamedTypeSymbol? t = method.ContainingType; t != null; t = t.BaseType)
+            if (t.OriginalDefinition.GetDocumentationCommentId() is { } typeId)
+                typeAndBaseIds.Add(typeId);
+
+        OverrideMappings.Add((overriddenId, methodId, typeAndBaseIds));
     }
 
     public override void VisitConstructorDeclaration(ConstructorDeclarationSyntax node)
@@ -716,7 +740,29 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
     private void HandleInvocation(InvocationExpressionSyntax node)
     {
         if (BoundMethod(node) is not { } method) return;
-        EmitMemberEdge(method, "call", LineOf(node));
+        var edge = EmitMemberEdge(method, "call", LineOf(node));
+        if (edge == null || !IsOverridable(method)) return;
+
+        if (_model.GetOperation(node) is IInvocationOperation invocation)
+            RecordVirtualCall(edge, method, invocation.IsVirtual, invocation.Instance);
+        else // bound to a sole candidate (BoundMethod): an invalid operation, so only the syntax can tell `base.M()`
+            RecordVirtualCall(edge, method, node.Expression is not MemberAccessExpressionSyntax { Expression: BaseExpressionSyntax }, null);
+    }
+
+    private static bool IsOverridable(IMethodSymbol method) => method.IsVirtual || method.IsAbstract || method.IsOverride;
+
+    /// <summary>
+    /// Records a call that dispatches virtually, for the override-expand pass. `base.M()` doesn't (IsVirtual false):
+    /// it runs exactly the member named. The receiver's static type bounds which overrides can run — through an
+    /// OrderRepository, never CustomerRepository's; when it isn't a named type (a type parameter) or isn't known,
+    /// the called member's own type is used, which bounds nothing.
+    /// </summary>
+    private void RecordVirtualCall(EdgeRecord edge, IMethodSymbol method, bool isVirtual, IOperation? instance)
+    {
+        if (!isVirtual) return;
+        var receiver = instance?.Type as INamedTypeSymbol ?? method.ContainingType;
+        if (receiver.OriginalDefinition.GetDocumentationCommentId() is { } receiverId)
+            VirtualCalls.Add((edge, receiverId));
     }
 
     /// <summary>
@@ -762,7 +808,9 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         };
         if (reference == null) return;
 
-        EmitMemberEdge(reference.Method, "call", LineOf(node), via: "delegate");
+        var edge = EmitMemberEdge(reference.Method, "call", LineOf(node), via: "delegate");
+        if (edge != null && IsOverridable(reference.Method))
+            RecordVirtualCall(edge, reference.Method, reference.IsVirtual, reference.Instance);
     }
 
     private void HandleObjectCreation(BaseObjectCreationExpressionSyntax node)
@@ -780,13 +828,13 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         EmitMemberEdge(symbol, kind, LineOf(node));
     }
 
-    private void EmitMemberEdge(ISymbol target, string kind, int line, string? via = null)
+    private EdgeRecord? EmitMemberEdge(ISymbol target, string kind, int line, string? via = null)
     {
         var declaredInSolution = target.Locations.Any(l => l.IsInSource);
-        if (!declaredInSolution && !_includeExternal) return;
+        if (!declaredInSolution && !_includeExternal) return null;
 
         var fromId = CurrentFromId();
-        if (fromId == null) return;
+        if (fromId == null) return null;
 
         // `"a".Ext(1)` binds to the REDUCED extension method — a synthesized symbol whose docId drops the `this`
         // parameter (M:N.E.Ext(System.Int32), not the declared M:N.E.Ext(System.String,System.Int32); for a
@@ -796,9 +844,11 @@ internal sealed class SyntaxSymbolWalker : CSharpSyntaxWalker
         if (target is IMethodSymbol { ReducedFrom: { } declared }) target = declared;
 
         var toId = target.OriginalDefinition.GetDocumentationCommentId();
-        if (toId == null) return;
+        if (toId == null) return null;
 
-        DirectEdges.Add(new EdgeRecord { From = fromId, To = toId, Kind = kind, File = _file, Line = line, Via = via });
+        var edge = new EdgeRecord { From = fromId, To = toId, Kind = kind, File = _file, Line = line, Via = via };
+        DirectEdges.Add(edge);
+        return edge;
     }
 
     private void EmitEdge(string fromDocId, INamedTypeSymbol target, string kind, int line)
