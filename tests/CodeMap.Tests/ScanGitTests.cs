@@ -229,7 +229,7 @@ public class ScanGitTests
     }
 
     [TestMethod]
-    public void No_matching_ticket_in_probe_window_refuses_to_write_output()
+    public void No_matching_ticket_in_probe_window_refuses_to_write_ticket_files()
     {
         var repo = GitFixtureHelper.NewRepo();
         GitFixtureHelper.Commit(repo, "a commit with no ticket convention at all", ("a.cs", "class A {}"));
@@ -237,8 +237,40 @@ public class ScanGitTests
         var outRoot = TestPaths.NewTempDir();
         var exitCode = ScanGitCommand.Run(new[] { "--repo", repo, "--out", outRoot });
 
-        Assert.AreEqual(1, exitCode);
+        Assert.AreEqual(ScanGitCommand.TicketsRefusedExitCode, exitCode);
         Assert.IsFalse(File.Exists(Path.Combine(outRoot, "index", "ticket-files.jsonl")));
+    }
+
+    [TestMethod] // co-change never reads a ticket ID, so a convention the pattern cannot see must not cost the file pairs too
+    public void No_matching_ticket_in_probe_window_still_writes_co_change()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        for (var i = 0; i < 3; i++)
+            GitFixtureHelper.Commit(repo, $"pass {i}, nothing the default ticket pattern can match", ("a.cs", $"v{i}"), ("b.cs", $"v{i}"));
+
+        var outRoot = TestPaths.NewTempDir();
+        var stderr = new StringWriter();
+        var previous = Console.Error;
+        int exitCode;
+        try
+        {
+            Console.SetError(stderr);
+            exitCode = ScanGitCommand.Run(new[] { "--repo", repo, "--out", outRoot });
+        }
+        finally
+        {
+            Console.SetError(previous);
+        }
+
+        // Still not a success: the ticket half is missing, and the caller has to be told so. A distinct code lets
+        // `sync` tell this apart from "nothing was written" without parsing stderr.
+        Assert.AreEqual(ScanGitCommand.TicketsRefusedExitCode, exitCode);
+        Assert.IsFalse(File.Exists(Path.Combine(outRoot, "index", "ticket-files.jsonl")));
+        StringAssert.Contains(stderr.ToString(), "ticketPattern");
+        StringAssert.Contains(stderr.ToString(), "Refusing to write an empty ticket-files.jsonl");
+
+        var pair = ReadCoChanges(outRoot).Single(c => c.FileA == "a.cs" && c.FileB == "b.cs");
+        Assert.AreEqual(3, pair.Together);
     }
 
     [TestMethod]
