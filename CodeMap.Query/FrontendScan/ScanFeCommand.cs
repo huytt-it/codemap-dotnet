@@ -40,7 +40,7 @@ internal static class ScanFeCommand
             jqResult.Calls.Select(c => (c.File, c.Line, c.HttpMethod, c.RawUrl, InjectedBy: (List<string>?)null, IsComponentItself: false)),
             "low", config, calls: frontendCalls, unparsed: unparsedUrls, unresolvedInjections: null); // jQuery has no DI concept — never worth an "unresolved injection" note
         foreach (var u in jqResult.Unparsed)
-            unparsedUrls.Add(new UnparsedFrontendUrl(u.File, u.Line, u.HttpMethod, "", "jQuery call site found but no resolvable URL argument/field"));
+            unparsedUrls.Add(new UnparsedFrontendUrl(u.File, u.Line, u.HttpMethod, u.RawUrl ?? "", u.Reason ?? "jQuery call site found but no resolvable URL argument/field"));
 
         frontendCalls = frontendCalls.OrderBy(c => c.File, StringComparer.Ordinal).ThenBy(c => c.Line).ToList();
         JsonlWriter.Write(Path.Combine(indexDir, "frontend-calls.jsonl"), frontendCalls);

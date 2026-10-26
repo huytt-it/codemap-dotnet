@@ -28,6 +28,27 @@ public class FrontendLinkRecallTests
         Assert.AreEqual(0, diagnostics.UnmatchedFrontendCalls.Count);
     }
 
+    [TestMethod] // MVC view: the literal URL in <script> links to the backend; the Razor-built one is surfaced in diagnostics, not guessed
+    public void Mvc_view_script_url_links_and_razor_built_url_is_reported_with_its_reason()
+    {
+        var root = TestPaths.NewTempDir();
+        Directory.CreateDirectory(Path.Combine(root, "Views", "Orders"));
+        File.WriteAllText(Path.Combine(root, "Views", "Orders", "Index.cshtml"),
+            "<script>\n$.ajax('/api/orders/' + id, { type: 'DELETE' });\n$.post('@Url.Action(\"Create\", \"Orders\")', data);\n</script>\n");
+
+        var (links, diagnostics) = ScanAndLink(root, new EntryPoint("M:Api.OrdersController.Delete(System.Int32)", "http", "DELETE", "api/orders/{id}"));
+
+        var link = links.Single();
+        Assert.AreEqual("exact", link.MatchKind);
+        Assert.AreEqual("fe:Views/Orders/Index.cshtml:2", link.FrontendId);
+        var unparsed = diagnostics.UnparsedFrontendUrls.Single();
+        Assert.AreEqual("Views/Orders/Index.cshtml", unparsed.File);
+        Assert.AreEqual(3, unparsed.Line);
+        Assert.AreEqual("POST", unparsed.HttpMethod);
+        StringAssert.Contains(unparsed.RawUrl, "@Url.Action");
+        StringAssert.Contains(unparsed.Reason, "conventional routing");
+    }
+
     /// <summary>Runs scan-fe over <paramref name="frontendRoot"/>, drops a hand-made entrypoints.json next to its output, runs link, returns what link wrote.</summary>
     private static (List<ApiLink> Links, DiagnosticsModel Diagnostics) ScanAndLink(string frontendRoot, params EntryPoint[] entryPoints)
     {
