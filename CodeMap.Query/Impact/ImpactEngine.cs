@@ -78,6 +78,8 @@ public static class ImpactEngine
         var viaInterfaceCount = edgesUsed.Count(e => e.Via == "interface");
         var viaInterfaceUnconfirmedCount = edgesUsed.Count(e => e.Via == "interface" && !IsConfirmedInterfaceEdge(index, e));
         var viaMediatrCount = edgesUsed.Count(e => e.Via == "mediatr");
+        var viaOverrideCount = edgesUsed.Count(e => e.Via == "override");
+        var viaDelegateCount = edgesUsed.Count(e => e.Via == "delegate");
 
         var rootFile = rootSymbol?.File;
         var relatedTickets = rootFile == null
@@ -91,9 +93,11 @@ public static class ImpactEngine
 
         var blindSpots = BuildBlindSpots(
             index, visitedDepth.Keys, rootSymbol, viaMediatrCount, viaInterfaceCount, viaInterfaceUnconfirmedCount, screens,
-            inferredRouteCount: entryPoints.Count(e => e.RouteInferred));
+            inferredRouteCount: entryPoints.Count(e => e.RouteInferred), overrideCount: viaOverrideCount, delegateCount: viaDelegateCount);
 
-        var riskScore = ComputeRiskScore(confirmedEntryPoints.Count, testsReached.Count, viaInterfaceCount - viaInterfaceUnconfirmedCount);
+        // Override hops have no DI evidence to confirm or rule them out, so all of them count, as unchecked interface hops do.
+        var riskScore = ComputeRiskScore(
+            confirmedEntryPoints.Count, testsReached.Count, viaInterfaceCount - viaInterfaceUnconfirmedCount + viaOverrideCount);
 
         return new ImpactResult
         {
@@ -109,6 +113,8 @@ public static class ImpactEngine
             ViaInterfaceCount = viaInterfaceCount,
             ViaInterfaceUnconfirmedCount = viaInterfaceUnconfirmedCount,
             ViaMediatrCount = viaMediatrCount,
+            ViaOverrideCount = viaOverrideCount,
+            ViaDelegateCount = viaDelegateCount,
             EntryPoints = entryPoints.OrderBy(e => e.Project, StringComparer.Ordinal).ThenBy(e => e.DisplayName, StringComparer.Ordinal).ToList(),
             Screens = screens,
             TestsReached = testsReached.OrderBy(t => t, StringComparer.Ordinal).ToList(),
@@ -126,7 +132,7 @@ public static class ImpactEngine
     /// reads/writes, inherits/implements edges, and the interface-expansion copies, so its length says little
     /// about how many methods depend on the symbol. Counts distinct <c>From</c> over call and construction edges
     /// (a constructor's only incoming edges are <c>new</c>), leaving out the symbol calling itself. Of those,
-    /// reports how many callers have nothing but expanded (Via) edges into the symbol.
+    /// reports how many callers have nothing but expanded edges into the symbol (see <see cref="IsExpansion"/>).
     /// </summary>
     private static (int Callers, int InferredOnly) CountDirectCallers(ImpactIndex index, string symbolId)
     {
@@ -136,18 +142,26 @@ public static class ImpactEngine
             .Where(e => e.Kind is "call" or "new" && e.From != symbolId)
             .GroupBy(e => e.From, StringComparer.Ordinal)
             .ToList();
-        return (byCaller.Count, byCaller.Count(g => g.All(e => e.Via != null)));
+        return (byCaller.Count, byCaller.Count(g => g.All(e => IsExpansion(e.Via))));
     }
 
     /// <summary>
-    /// Approximation, not a spec formula (none is given): weights entry points highest (that's what actually
-    /// breaks when this changes), a smaller weight for interface hops (real risk, but a DI container might
-    /// resolve differently than the static expansion), tests nudge it down a little (a guard rail exists).
+    /// An edge the scan inferred rather than read from the caller's code: one call copied to every implementation
+    /// (interface) or override (override), or a Send/Publish joined to its handlers by convention (mediatr). A
+    /// via:"delegate" edge is not one of them: passing a method as a delegate is written in the caller's code.
     /// </summary>
-    private static int ComputeRiskScore(int entryPointCount, int testCount, int viaInterfaceCount)
+    private static bool IsExpansion(string? via) => via is "interface" or "mediatr" or "override";
+
+    /// <summary>
+    /// Approximation, not a spec formula (none is given): weights entry points highest (that's what actually
+    /// breaks when this changes), a smaller weight for expanded hops through an interface or an override (real
+    /// risk, but the runtime might resolve a different implementation than the static expansion), tests nudge
+    /// it down a little (a guard rail exists).
+    /// </summary>
+    private static int ComputeRiskScore(int entryPointCount, int testCount, int expandedHopCount)
     {
         if (entryPointCount == 0 && testCount == 0) return 0;
-        var score = entryPointCount * 0.6 + viaInterfaceCount * 0.15 - (testCount > 0 ? 0.5 : 0);
+        var score = entryPointCount * 0.6 + expandedHopCount * 0.15 - (testCount > 0 ? 0.5 : 0);
         return Math.Clamp((int)Math.Ceiling(score), entryPointCount > 0 ? 1 : 0, 10);
     }
 
@@ -243,7 +257,7 @@ public static class ImpactEngine
 
     private static List<string> BuildBlindSpots(
         ImpactIndex index, IEnumerable<string> reachedIds, SymbolRecord? rootSymbol, int mediatrCount, int interfaceCount,
-        int unconfirmedInterfaceCount, List<ReachedScreen> screens, int inferredRouteCount)
+        int unconfirmedInterfaceCount, List<ReachedScreen> screens, int inferredRouteCount, int overrideCount, int delegateCount)
     {
         var spots = new List<string>();
 
@@ -266,6 +280,10 @@ public static class ImpactEngine
             spots.Add($"{mediatrCount} edge(s) go through MediatR (inferred by convention: mediator.Send/.Publish with an inline `new` argument).");
         if (interfaceCount > 0)
             spots.Add($"{interfaceCount} edge(s) go through an interface (expanded to every known implementation — a DI container could resolve a different one at runtime).");
+        if (overrideCount > 0)
+            spots.Add($"{overrideCount} edge(s) go through a virtual or abstract call (expanded to every override at or below the receiver's declared type — at runtime the object's actual type decides which one runs).");
+        if (delegateCount > 0)
+            spots.Add($"{delegateCount} edge(s) pass a method as a delegate or event handler — it runs only when that delegate is invoked, which may be later or never.");
         if (unconfirmedInterfaceCount > 0)
             spots.Add(
                 $"{unconfirmedInterfaceCount} of those interface edge(s) point at an implementation di-confirmed.json shows is NOT the one actually DI-bound at that call site (commonly a decorator pattern — see docs/BENCHMARK-INTERFACE-EXPANSION.md) — marked \"other possible implementation\" below, not the confirmed path.");

@@ -32,14 +32,14 @@ public sealed class ImpactResult
     /// <summary>Distinct methods with at least one call or construction edge straight into <see cref="SymbolId"/>, by caller, not by edge: three call sites in one method are one caller, and field reads/writes, inherits/implements edges and the symbol calling itself are not counted.</summary>
     public required int DirectFanIn { get; init; }
 
-    /// <summary>Of <see cref="DirectFanIn"/>, how many reach the symbol ONLY through an interface or MediatR expansion (every edge from that caller carries a Via) — inferred, not written in the caller's code.</summary>
+    /// <summary>Of <see cref="DirectFanIn"/>, how many reach the symbol ONLY through an interface, MediatR or override expansion — inferred, not written in the caller's code. A method passed as a delegate (via:"delegate") is written in the caller's code and does not count here.</summary>
     public int DirectCallersInferred { get; init; }
     public required int DepthScanned { get; init; }
 
     /// <summary>Judged on confirmed entry points only (<see cref="ReachedEntryPoint.IsConfirmedBinding"/>); ones reachable solely through an implementation DI does not bind are listed but do not make a hub.</summary>
     public required bool IsHub { get; init; }
 
-    /// <summary>Scored on confirmed entry points and confirmed interface hops; see <see cref="ViaInterfaceUnconfirmedCount"/> for what was left out.</summary>
+    /// <summary>Scored on confirmed entry points, confirmed interface hops and override hops; see <see cref="ViaInterfaceUnconfirmedCount"/> for what was left out.</summary>
     public required int RiskScore { get; init; }
 
     /// <summary>Every interface-expanded edge the traversal used, confirmed or not.</summary>
@@ -48,6 +48,12 @@ public sealed class ImpactResult
     /// <summary>Of <see cref="ViaInterfaceCount"/>, edges into an implementation di-confirmed.json shows is not the one DI-bound at that call site.</summary>
     public int ViaInterfaceUnconfirmedCount { get; init; }
     public required int ViaMediatrCount { get; init; }
+
+    /// <summary>Edges the traversal used that the scan expanded from a call through a base type to an override (via:"override"). Like an interface hop, a static expansion: at runtime the object's actual type decides which override runs.</summary>
+    public int ViaOverrideCount { get; init; }
+
+    /// <summary>Edges the traversal used where a method is passed as a delegate or event handler (via:"delegate"). Written in the caller's code, so not inferred, but the method runs only when the delegate is invoked.</summary>
+    public int ViaDelegateCount { get; init; }
     public required List<ReachedEntryPoint> EntryPoints { get; init; }
     public required List<ReachedScreen> Screens { get; init; }
     public required List<string> TestsReached { get; init; }

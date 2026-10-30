@@ -249,7 +249,13 @@ này, không phải số chỗ gọi.
 
 - `via:"interface"` — tool nhân bản lời gọi sang **mọi** class implement interface đó. Runtime
   thật thường chỉ đi một nhánh. Đây là suy diễn, có thể phóng đại phạm vi ảnh hưởng.
+- `via:"override"` — lời gọi qua kiểu base (method virtual/abstract) được nhân bản sang **mọi**
+  override ở kiểu đó và các kiểu con. Runtime chỉ chạy override của kiểu thật của object. Cũng là
+  suy diễn, giống `via:"interface"`.
 - `via:"mediatr"` — nối theo quy ước MediatR, không phải quan hệ gọi trực tiếp.
+- `via:"delegate"` — method được truyền làm delegate hoặc event handler (`.Select(Map)`,
+  `+= OnClick`). Có thật trong code, nhưng method chỉ chạy khi delegate được gọi, có thể muộn
+  hơn hoặc không bao giờ.
 
 Report tách sẵn hai nhóm: entry point dưới heading chính là loại **có đăng ký DI thật**;
 những cái nằm dưới **"Other possible implementations"** chỉ là class cùng implement interface,
