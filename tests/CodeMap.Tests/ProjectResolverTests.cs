@@ -244,14 +244,19 @@ public class ProjectResolverTests
         Assert.AreEqual(CodeMapToolException.NotIndexed, ex.Code);
     }
 
-    [TestMethod] // a tools solution nested inside the main solution's folder is the more specific match
-    public void Deepest_solution_directory_wins_among_nested_solutions()
+    [TestMethod] // a tools solution nested inside the main solution's folder: a workspace inside both is a question for the agent
+    public void Nested_solutions_are_ambiguous_for_a_workspace_inside_both()
     {
         var fx = new Fixture();
         var config = fx.Registry("", Project("app", "app/App.sln"), Project("tools", "app/build/tools/Tools.sln"));
 
-        Assert.AreEqual("tools", fx.Resolver(config, workspace: fx.Dir("app/build/tools/Gen")).Resolve(project: null).Name);
-        Assert.AreEqual("app", fx.Resolver(config, workspace: fx.Dir("app/Orders")).Resolve(project: null).Name);
+        var ex = Assert.ThrowsException<CodeMapToolException>(
+            () => fx.Resolver(config, workspace: fx.Dir("app/build/tools/Gen")).Resolve(project: null));
+
+        Assert.AreEqual(CodeMapToolException.AmbiguousProject, ex.Code);
+        StringAssert.Contains(ex.Message, "app");
+        StringAssert.Contains(ex.Message, "tools");
+        Assert.AreEqual("app", fx.Resolver(config, workspace: fx.Dir("app/Orders")).Resolve(project: null).Name); // inside only one
     }
 
     [TestMethod] // the server lives as long as the editor; editing the registry must not need a restart

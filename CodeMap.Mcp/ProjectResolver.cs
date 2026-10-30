@@ -110,7 +110,7 @@ internal sealed class ProjectResolver
     private ResolvedProject Resolved(RegistrySnapshot snapshot, ProjectEntry entry, MatchRule rule)
         => new(snapshot.Registry, entry, snapshot.Registry.IndexDirOf(entry), snapshot.RepoRootOf(entry), rule, Workspace);
 
-    /// <summary>The first rule, most specific first, that any entry satisfies; among nested folders under that rule, the deepest.</summary>
+    /// <summary>The entries that satisfy the first rule, most specific first, that any entry satisfies. More than one is AMBIGUOUS_PROJECT.</summary>
     private List<Candidate> Match(RegistrySnapshot snapshot)
     {
         foreach (var rule in WorkspaceRules)
@@ -124,21 +124,10 @@ internal sealed class ProjectResolver
                 var matches = rule == MatchRule.ContainsRepoRoot
                     ? IsSameOrInside(anchor, Workspace.Path)
                     : IsSameOrInside(Workspace.Path, anchor);
-                if (matches) hits.Add(new Candidate(entry, rule, anchor));
+                if (matches) hits.Add(new Candidate(entry, rule));
             }
 
-            if (hits.Count == 0) continue;
-
-            // Every anchor here contains the workspace, so they are nested in one another and the longest path is the
-            // innermost: a tools solution under the main solution's folder is what a workspace inside it is about.
-            // A workspace above several repos has no such order; those stay ambiguous.
-            if (rule != MatchRule.ContainsRepoRoot)
-            {
-                var deepest = hits.Max(h => h.Anchor.Length);
-                hits.RemoveAll(h => h.Anchor.Length != deepest);
-            }
-
-            return hits;
+            if (hits.Count > 0) return hits;
         }
 
         return new List<Candidate>();
@@ -267,7 +256,7 @@ internal sealed class ProjectResolver
     private static bool IsSameOrInside(string path, string directory)
         => string.Equals(path, directory, FilePathComparison.Comparison) || FilePathComparison.IsInside(directory, path);
 
-    private sealed record Candidate(ProjectEntry Entry, MatchRule Rule, string Anchor);
+    private sealed record Candidate(ProjectEntry Entry, MatchRule Rule);
 
     /// <summary>One parse of the registry file and everything worked out from it, dropped together when the file changes.</summary>
     private sealed class RegistrySnapshot(string path, (DateTime, long) stamp, ProjectRegistry registry)
