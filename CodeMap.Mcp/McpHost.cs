@@ -61,6 +61,14 @@ public static class McpHost
             return ValueTask.CompletedTask;
         });
 
+        // The client's answers to the spike's questions, written to stderr as soon as the handshake ends, so they
+        // show in the client's MCP log without anyone having to call a tool. Same facts as codemap_debug_environment.
+        server.RegisterNotificationHandler(NotificationMethods.InitializedNotification, (_, _) =>
+        {
+            _ = Task.Run(() => EnvironmentTool.LogHandshakeAsync(server, state));
+            return ValueTask.CompletedTask;
+        });
+
         state.MarkReady();
         Console.Error.WriteLine(
             $"codemap mcp: ready after {state.ReadyAfterMs} ms · pid {Environment.ProcessId} · cwd {Environment.CurrentDirectory}");

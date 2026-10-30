@@ -107,6 +107,25 @@ internal sealed class EnvironmentTool(SpikeState state)
         return sb.ToString();
     }
 
+    /// <summary>One stderr line per fact, right after the handshake. Never throws: a failure here must not take the server down.</summary>
+    public static async Task LogHandshakeAsync(McpServer server, SpikeState state)
+    {
+        try
+        {
+            await Task.Delay(300); // the SDK fills ClientInfo and the negotiated version in just after this notification is dispatched
+            var client = server.ClientInfo;
+            Console.Error.WriteLine($"codemap mcp: handshake · client {client?.Name} {client?.Version} · protocol {server.NegotiatedProtocolVersion} · capabilities {Describe(server.ClientCapabilities)}");
+            Console.Error.WriteLine($"codemap mcp: handshake · cwd {Environment.CurrentDirectory} · --workspace {state.WorkspaceArg ?? "(not given)"}");
+            var roots = await ProbeRootsAsync(server, CancellationToken.None);
+            Console.Error.WriteLine($"codemap mcp: handshake · roots {roots.Status}");
+            foreach (var root in roots.Roots) Console.Error.WriteLine($"codemap mcp: handshake · root {root.Uri}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"codemap mcp: handshake log failed: {ex.Message}");
+        }
+    }
+
     private static async Task<RootsProbe> ProbeRootsAsync(McpServer server, CancellationToken cancellationToken)
     {
         if (server.ClientCapabilities?.Roots == null)
