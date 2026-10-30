@@ -209,11 +209,18 @@ public static class CompactRenderer
         // rest is named below it rather than dropped, since "speculative" is not "absent".
         var unconfirmedEntryPoints = result.EntryPoints.Count(e => !e.IsConfirmedBinding);
         var confirmedInterfaceHops = result.ViaInterfaceCount - result.ViaInterfaceUnconfirmedCount;
-        sb.AppendLine($"## Risk score: {result.RiskScore}/10");
+        // No score at all, not a 0: a 0/10 here reads as "safe", the same trap as a bare "Affected entry points (0)".
+        sb.AppendLine(result.RiskScore is { } score
+            ? $"## Risk score: {score}/10"
+            : $"## Risk score: not scored — {result.IntermediateCallers.Count} unclassified caller(s)");
         sb.AppendLine(
             $"{result.EntryPoints.Count - unconfirmedEntryPoints} entry point(s) · {result.TestsReached.Count} test(s) · " +
             $"{confirmedInterfaceHops} interface hop(s) · {result.ViaOverrideCount} override hop(s) · {result.ViaMediatrCount} MediatR hop(s)");
-        if (unconfirmedEntryPoints > 0 || result.ViaInterfaceUnconfirmedCount > 0)
+        if (result.RiskScore == null)
+            sb.AppendLine(
+                "Callers were reached, but none is a recognized entry point or a test, so there is nothing to weigh. " +
+                "This is not a low score and not \"no impact\" (see \"0 recognized\" above).");
+        else if (unconfirmedEntryPoints > 0 || result.ViaInterfaceUnconfirmedCount > 0)
             sb.AppendLine(
                 "Not counted in the score — reachable only through an implementation DI does not bind at that call site: " +
                 $"{unconfirmedEntryPoints} entry point(s), {result.ViaInterfaceUnconfirmedCount} interface hop(s) (see \"Other possible implementations\").");

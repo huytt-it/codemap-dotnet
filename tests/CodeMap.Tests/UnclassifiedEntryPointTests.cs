@@ -76,6 +76,8 @@ public class UnclassifiedEntryPointTests
         var markdown = CompactRenderer.Render(result, full: false, meta: index.Meta);
         StringAssert.Contains(markdown, "## Affected entry points: 0 recognized");
         StringAssert.Contains(markdown, "⚠");
+        StringAssert.Contains(markdown, "## Risk score: not scored — ");
+        Assert.IsFalse(markdown.Contains("/10"), "the score must not claim 0/10 for callers nothing classified");
     }
 
     private static ImpactResult BuildResult(

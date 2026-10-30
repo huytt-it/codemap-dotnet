@@ -39,8 +39,12 @@ public sealed class ImpactResult
     /// <summary>Judged on confirmed entry points only (<see cref="ReachedEntryPoint.IsConfirmedBinding"/>); ones reachable solely through an implementation DI does not bind are listed but do not make a hub.</summary>
     public required bool IsHub { get; init; }
 
-    /// <summary>Scored on confirmed entry points, confirmed interface hops and override hops; see <see cref="ViaInterfaceUnconfirmedCount"/> for what was left out.</summary>
-    public required int RiskScore { get; init; }
+    /// <summary>
+    /// Scored on confirmed entry points, confirmed interface hops and override hops; see <see cref="ViaInterfaceUnconfirmedCount"/>
+    /// for what was left out. Null means not scored: callers were reached (<see cref="IntermediateCallers"/>) but none is an
+    /// entry point or a test, so there is nothing to weigh. That is not a low score, and 0 would read as "safe".
+    /// </summary>
+    public required int? RiskScore { get; init; }
 
     /// <summary>Every interface-expanded edge the traversal used, confirmed or not.</summary>
     public required int ViaInterfaceCount { get; init; }

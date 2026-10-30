@@ -253,6 +253,52 @@ public class ImpactEngineTests
         Assert.AreEqual(20, result.ViaInterfaceUnconfirmedCount);
     }
 
+    // eShopOnWeb, BasketViewModelService.GetOrCreateBasketForUser: 5 callers reached, none a recognized entry point
+    // (Razor Pages) and no test. "Risk score: 0/10" read as "safe" when the truth is "nothing was measured".
+    [TestMethod]
+    public void Risk_is_not_scored_when_callers_were_reached_but_none_is_an_entry_point_or_a_test()
+    {
+        var index = BuildIndex(
+            symbols: new[] { "T:Target", "T:Helper", "T:Page1", "T:Page2" },
+            edges: new[] { ("T:Page1", "T:Helper"), ("T:Page2", "T:Helper") },
+            entryPoints: Array.Empty<string>(),
+            extraEdges: new[] { Edge("T:Helper", "T:Target", via: "interface") });
+
+        var result = ImpactEngine.Traverse(index, "T:Target", depth: 5);
+        var markdown = CompactRenderer.Render(result, full: false, meta: null);
+
+        Assert.IsNull(result.RiskScore);
+        StringAssert.Contains(markdown, "## Risk score: not scored — 3 unclassified caller(s)");
+        StringAssert.Contains(markdown, "not a low score and not \"no impact\"");
+        Assert.IsFalse(markdown.Contains("/10"), markdown);
+    }
+
+    [TestMethod] // only "callers, but none classified" loses the number; the other corners keep today's scoring
+    public void Risk_keeps_its_score_for_a_leaf_for_a_tested_symbol_and_for_an_entry_point()
+    {
+        var leaf = ImpactEngine.Traverse(
+            BuildIndex(symbols: new[] { "T:Target" }, edges: Array.Empty<(string, string)>(), entryPoints: Array.Empty<string>()),
+            "T:Target", depth: 5);
+        var tested = ImpactEngine.Traverse(
+            BuildIndex(
+                symbols: new[] { "T:Target", "T:Helper", "T:Spec" },
+                edges: new[] { ("T:Helper", "T:Target"), ("T:Spec", "T:Helper") }, entryPoints: Array.Empty<string>(),
+                projectOverrides: new() { ["T:Spec"] = "Orders.Tests" }),
+            "T:Target", depth: 5);
+        var routed = ImpactEngine.Traverse(
+            BuildIndex(
+                symbols: new[] { "T:Target", "T:Helper", "T:Ep" },
+                edges: new[] { ("T:Helper", "T:Target"), ("T:Ep", "T:Helper") }, entryPoints: new[] { "T:Ep" }),
+            "T:Target", depth: 5);
+
+        Assert.AreEqual(0, leaf.RiskScore); // nothing calls it: a genuine 0
+        Assert.AreEqual(0, tested.RiskScore); // a test guards it, so 0 is a measurement
+        Assert.AreEqual(1, tested.TestsReached.Count);
+        Assert.AreEqual(1, routed.RiskScore);
+        Assert.AreEqual(1, routed.IntermediateCallers.Count); // an unclassified caller next to an entry point does not unscore it
+        StringAssert.Contains(CompactRenderer.Render(leaf, full: false, meta: null), "## Risk score: 0/10");
+    }
+
     [TestMethod]
     public void Module_fan_in_counts_confirmed_entry_points()
     {
@@ -446,7 +492,7 @@ public class ImpactEngineTests
                     Edge("T:Ep", "T:Target", via: via), Edge("T:C1", "T:Target", via: via),
                     Edge("T:C2", "T:Target", via: via), Edge("T:C3", "T:Target", via: via),
                 });
-            return ImpactEngine.Traverse(index, "T:Target", depth: 3).RiskScore;
+            return ImpactEngine.Traverse(index, "T:Target", depth: 3).RiskScore!.Value; // an entry point is reached, so it is scored
         }
 
         Assert.IsTrue(RiskWith("override") > RiskWith(null));
