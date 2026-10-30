@@ -173,12 +173,14 @@ In each target repo, create `.vscode/mcp.json`:
 
 If you installed with Option B (no install), use `"command": "dotnet"` and put the full path of `CodeMap.Cli.dll` first in `args`. The server finds the project by matching the workspace against the `codemap.projects.json` from Task 1, so nothing project-specific goes in this file, and it can be committed for the whole team.
 
+**To add nothing to the target repos**, put the entry in VS Code's user-level MCP configuration instead (command **MCP: Open User Configuration**). There, use absolute paths for `--config` and `--workspace` (the folder you open in VS Code), not `${workspaceFolder}`. One entry then covers any number of repos under that folder: if several match, the first call answers `AMBIGUOUS_PROJECT` and the agent retries with `project=<name>`. This is what [SETUP-PROMPT.md](SETUP-PROMPT.md) does.
+
 Then quit VS Code completely, reopen the repo, and ask a question in chat. The server starts after the first message. See [Part 3b of the main README](../README.md#part-3b--let-an-agent-call-codemap-directly-mcp) for the tools it serves and what to expect.
 
 ---
 
 ## Prefer not to do this yourself? Have an AI do it
 
-Open [SETUP-PROMPT.md](SETUP-PROMPT.md), copy the prompt block it contains, and paste it into Copilot Chat (Agent mode), Claude Code, or Cursor. It detects your SDK, chooses an install method that matches what your machine's policy allows, asks you for paths, and completes all four tasks above. It does not do Task 5 (MCP) yet.
+Open [SETUP-PROMPT.md](SETUP-PROMPT.md), copy the prompt block it contains, and paste it into Copilot Chat (Agent mode), Claude Code, or Cursor. It detects your SDK, chooses an install method that matches what your machine's policy allows, and asks you which repos to index (any number) and where everything goes. Then it completes Tasks 1, 2, 4 and 5 the user-level way: registry at `~/.codemap/`, instructions at `~/.copilot/instructions/`, and MCP in VS Code's user-level configuration. Nothing is written into the repos you index unless you allow it. Task 3 is skipped, because it only matters for the terminal workflow.
 
 The prompt deliberately **forbids the agent from running `git clone`** and **forbids editing the PowerShell profile or system PATH** — you keep control over where the source comes from, and nothing runs into corporate machine policy restrictions.

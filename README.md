@@ -79,9 +79,17 @@ Setting up on another machine, or having a colleague clone the repo, means repea
 
 ### Prefer not to read all this? Have an AI do it
 
-Clone this repo (the "Get the source" step above), then open [setup/SETUP-PROMPT.md](setup/SETUP-PROMPT.md) and paste the prompt block it contains into Copilot, Claude Code, or Cursor. It will detect your SDK, choose an install method that matches what your machine's policy allows, declare `codemap.projects.json`, decide which commands it may run on its own in `codemap.permissions.json`, place `codemap.instructions.md` so an agent picks it up automatically, and run the scan — the same four tasks described in [setup/README.md](setup/README.md). The prompt deliberately **forbids the agent from running `git clone` itself** and from editing your PowerShell profile or system PATH: you clone, then hand it the path.
+Clone this repo (the "Get the source" step above), then open [setup/SETUP-PROMPT.md](setup/SETUP-PROMPT.md) and paste the prompt block it contains into Copilot Chat in Agent mode (or Claude Code, Cursor). It detects your SDK, builds and installs `codemap`, and **asks you** which repos to index (any number), where to put the indexes, and which folder you open in VS Code. Then it:
 
-> **Setting up a second machine:** `codemap.projects.json`, `codemap.permissions.json`, and `codemap.instructions.md` (when placed at `~/.copilot/instructions/`) normally live at `~/.codemap/` and `~/.copilot/instructions/` — **outside this git repo**. Cloning the repo again on a new machine does not bring them along; repeat this AI-driven setup (or copy those files over by hand) on each machine separately. The one exception is `codemap.instructions.md` placed per-repo under `<target-repo>/.github/instructions/` (Option B in [setup/README.md](setup/README.md)) — that copy is committed into the target repo, so it arrives automatically with `git clone` of that repo.
+- writes `~/.codemap/codemap.projects.json`;
+- checks each repo's ticket convention;
+- scans;
+- installs the agent instructions at `~/.copilot/instructions/`;
+- adds the MCP server to VS Code's user-level configuration.
+
+It **never writes into the repos it indexes** unless you allow it case by case. It also **never runs `git clone`** and never edits your PowerShell profile or system PATH: you clone, then hand it the path.
+
+> **Setting up another machine:** the registry (`~/.codemap/`), the instructions (`~/.copilot/instructions/`) and VS Code's user-level `mcp.json` live **outside this git repo**, so cloning it on a new machine does not bring them along. Run the prompt once on each machine.
 
 ---
 
@@ -330,6 +338,8 @@ codemap slice --index D:\CodeMapIndex\MyApp\index --symbol "M:Orders.OrderServic
 ```
 
 With Option B (no install), use `"command": "dotnet"` and put the full path of `CodeMap.Cli.dll` first in `args`.
+
+**To keep CodeMap files out of your repos**, put the same entry in VS Code's user-level MCP configuration instead (command **MCP: Open User Configuration**). Use absolute paths there: `"args": ["mcp", "--config", "<absolute path to codemap.projects.json>", "--workspace", "<the folder you open in VS Code>"]`, not `${workspaceFolder}`. If that folder holds several indexed projects, the first call in a chat answers `AMBIGUOUS_PROJECT` with the list, and the agent calls again with `project=<name>`. [setup/SETUP-PROMPT.md](setup/SETUP-PROMPT.md) sets it up this way.
 
 **2. Install the agent instructions** ([For AI agents to read](#for-ai-agents-to-read-github-copilot-claude-)). Their first section tells the agent to look for the `codemap_*` tools and use them. Without it, an agent that was set up for the terminal workflow kept printing commands even though the tools were available.
 
