@@ -11,11 +11,16 @@ namespace CodeMap.Query.Impact;
 public static class CompactRenderer
 {
     /// <param name="repoRoot">Repo the staleness banner runs git in; null falls back to the process's working directory (bare `--index`).</param>
-    public static string Render(ImpactResult result, bool full, MetaModel? meta, string? repoRoot = null)
+    /// <param name="options">Null is <see cref="RenderStyle.Cli"/>. In <see cref="RenderStyle.Mcp"/> the output has no banner at all: it starts at the "# Impact" heading, and the caller puts its own one-line freshness (computed over <see cref="CollectRelevantFiles"/>) in front.</param>
+    public static string Render(ImpactResult result, bool full, MetaModel? meta, string? repoRoot = null, RenderOptions? options = null)
     {
+        var style = options?.Style ?? RenderStyle.Cli;
         var sb = new StringBuilder();
-        sb.Append(StalenessBanner.Render(meta, CollectRelevantFiles(result), repoRoot));
-        sb.AppendLine();
+        if (style == RenderStyle.Cli)
+        {
+            sb.Append(StalenessBanner.Render(meta, CollectRelevantFiles(result), repoRoot));
+            sb.AppendLine();
+        }
 
         sb.AppendLine($"# Impact: {result.DisplayName}");
         if (result.File != null) sb.AppendLine($"File: {result.File}:{result.Line}");
@@ -24,11 +29,11 @@ public static class CompactRenderer
 
         if (result.IsHub && !full)
         {
-            AppendHubWarning(sb, result);
+            AppendHubWarning(sb, result, style);
         }
         else
         {
-            AppendEntryPoints(sb, result);
+            AppendEntryPoints(sb, result, style);
         }
 
         AppendScreens(sb, result);
@@ -51,7 +56,13 @@ public static class CompactRenderer
         return $"{result.DirectFanIn} distinct caller(s) (methods that call or construct it, once each{inferred})";
     }
 
-    private static void AppendHubWarning(StringBuilder sb, ImpactResult result)
+    /// <summary>How the style spells "ask for the long report": the CLI's flag, or the MCP tool's parameter.</summary>
+    private static string FullHint(RenderStyle style) => style == RenderStyle.Mcp ? "detail=full" : "--full";
+
+    /// <summary>How the style spells "look further": the CLI's flag, or the MCP tool's parameter.</summary>
+    private static string DepthHint(RenderStyle style) => style == RenderStyle.Mcp ? "depth" : "--depth";
+
+    private static void AppendHubWarning(StringBuilder sb, ImpactResult result, RenderStyle style)
     {
         var screenCount = result.Screens.Select(s => s.Feature).Distinct(StringComparer.Ordinal).Count();
         var unconfirmedCount = result.EntryPoints.Count(e => !e.IsConfirmedBinding);
@@ -62,16 +73,16 @@ public static class CompactRenderer
         if (unconfirmedCount > 0)
             sb.AppendLine(
                 $"{unconfirmedCount} more entry point(s) are reachable only through implementations DI does not bind at that call site " +
-                "(not counted above; --full lists them).");
+                $"(not counted above; {FullHint(style)} lists them).");
         sb.AppendLine("Blast radius is system-wide. Don't change the signature, don't change default behavior.");
-        sb.AppendLine("Re-run with --full if you still need the full list.");
+        sb.AppendLine($"Re-run with {FullHint(style)} if you still need the full list.");
         sb.AppendLine();
         sb.AppendLine("Affected modules: " + string.Join(" · ",
             result.ModuleFanIn.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key} ({kv.Value})")));
         sb.AppendLine();
     }
 
-    private static void AppendEntryPoints(StringBuilder sb, ImpactResult result)
+    private static void AppendEntryPoints(StringBuilder sb, ImpactResult result, RenderStyle style)
     {
         // Benchmark finding (docs/BENCHMARK-CODEMAP-VS-BASELINE.md, Q2): a bare "(0)" here reads as "no impact" —
         // but 0 only means "0 RECOGNIZED entry points" (Controller/BackgroundService/MediatR handler). A Razor
@@ -86,7 +97,7 @@ public static class CompactRenderer
                 $"⚠ {result.IntermediateCallers.Count} caller(s) were reached that this tool could not classify " +
                 "into a known entry point type (not a Controller, BackgroundService, or MediatR handler — could " +
                 "be a Razor Page, Minimal API endpoint, or something else not yet recognized). This is NOT the " +
-                "same as \"no impact\" — see \"Intermediate callers\" below (rerun with `--full` if not already).");
+                $"same as \"no impact\" — see \"Intermediate callers\" below (rerun with `{FullHint(style)}` if not already).");
             sb.AppendLine();
             return;
         }
@@ -103,7 +114,7 @@ public static class CompactRenderer
         sb.AppendLine();
         if (confirmed.Count == 0)
         {
-            sb.AppendLine("_None reachable within the scanned depth — increase --depth, or this really is a leaf._");
+            sb.AppendLine($"_None reachable within the scanned depth — increase {DepthHint(style)}, or this really is a leaf._");
         }
         else
         {
@@ -269,7 +280,8 @@ public static class CompactRenderer
             foreach (var b in result.BlindSpots) sb.AppendLine($"- {b}");
     }
 
-    private static List<string> CollectRelevantFiles(ImpactResult result)
+    /// <summary>The files the answer depends on, which is what the freshness check should be limited to. Public so a caller that renders in <see cref="RenderStyle.Mcp"/> asks git about exactly the set the banner would have.</summary>
+    public static List<string> CollectRelevantFiles(ImpactResult result)
     {
         var files = new List<string>();
         if (result.File != null) files.Add(result.File);

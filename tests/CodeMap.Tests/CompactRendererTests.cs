@@ -192,9 +192,63 @@ public class CompactRendererTests
         StringAssert.Contains(markdown, "3 override hop(s)");
     }
 
+    [TestMethod] // MCP: the tool opens with its own one-line freshness, so the markdown banner and scope note must not be here
+    public void Mcp_style_has_no_banner_and_starts_at_the_heading()
+    {
+        var entryPoints = new List<ReachedEntryPoint> { new("M:A", "A", "http", "GET", "api/a", "Proj.A", 1) };
+        var options = new RenderOptions(RenderStyle.Mcp);
+
+        var markdown = CompactRenderer.Render(BuildResult(isHub: false, entryPoints), full: false, meta: null, options: options);
+
+        StringAssert.StartsWith(markdown, "# Impact: Target");
+        Assert.IsFalse(markdown.Contains("<!--"));
+        Assert.IsFalse(markdown.Contains("Scope of this file"));
+    }
+
+    [TestMethod] // the model has no --full or --depth to pass: it has the tool's detail and depth parameters
+    public void Mcp_style_names_the_tool_parameters_in_its_hints()
+    {
+        var options = new RenderOptions(RenderStyle.Mcp);
+        var many = Enumerable.Range(0, 35)
+            .Select(i => new ReachedEntryPoint($"M:Ok{i}", $"Ok{i}", "handler", null, null, "Proj.A", 1))
+            .Concat(new[] { new ReachedEntryPoint("M:Maybe", "Maybe", "handler", null, null, "Proj.B", 1, IsConfirmedBinding: false) })
+            .ToList();
+        var hub = CompactRenderer.Render(BuildResult(isHub: true, many), full: false, meta: null, options: options);
+        var unclassified = CompactRenderer.Render(
+            BuildResult(isHub: false, new(), intermediateCallers: new() { new CallerNode("M:Legacy.Run", "Legacy.Run", "Legacy", 1) }),
+            full: false, meta: null, options: options);
+        var leaf = CompactRenderer.Render(BuildResult(isHub: false, new()), full: false, meta: null, options: options);
+
+        StringAssert.Contains(hub, "detail=full lists them");
+        StringAssert.Contains(hub, "Re-run with detail=full");
+        StringAssert.Contains(unclassified, "rerun with `detail=full`");
+        StringAssert.Contains(leaf, "increase depth,");
+        foreach (var text in new[] { hub, unclassified, leaf })
+        {
+            Assert.IsFalse(text.Contains("--full"), text);
+            Assert.IsFalse(text.Contains("--depth"), text);
+        }
+    }
+
+    [TestMethod] // everything but the banner and those hints is shared, so the CLI's report cannot change by adding the style
+    public void Cli_style_is_the_default_and_Mcp_differs_only_in_banner_and_hints()
+    {
+        var entryPoints = new List<ReachedEntryPoint> { new("M:A", "A", "http", "GET", "api/a", "Proj.A", 1) };
+        var result = BuildResult(isHub: false, entryPoints);
+
+        var byDefault = CompactRenderer.Render(result, full: false, meta: null);
+        var cli = CompactRenderer.Render(result, full: false, meta: null, options: new RenderOptions(RenderStyle.Cli));
+        var mcp = CompactRenderer.Render(result, full: false, meta: null, options: new RenderOptions(RenderStyle.Mcp));
+
+        Assert.AreEqual(byDefault, cli);
+        StringAssert.StartsWith(byDefault, "<!-- codemap v2");
+        Assert.AreEqual(byDefault[byDefault.IndexOf("# Impact:", StringComparison.Ordinal)..], mcp); // no hint applies to this result
+    }
+
     private static ImpactResult BuildResult(
         bool isHub, List<ReachedEntryPoint> entryPoints, int? directFanIn = null, int directCallersInferred = 0,
-        int viaInterface = 0, int viaInterfaceUnconfirmed = 0, List<ReachedScreen>? screens = null, int viaOverride = 0) => new()
+        int viaInterface = 0, int viaInterfaceUnconfirmed = 0, List<ReachedScreen>? screens = null, int viaOverride = 0,
+        List<CallerNode>? intermediateCallers = null) => new()
     {
         SymbolId = "M:Target",
         DisplayName = "Target",
@@ -215,7 +269,7 @@ public class CompactRendererTests
         RelatedTickets = new(),
         CoChangingFiles = new(),
         BlindSpots = new(),
-        IntermediateCallers = new(),
+        IntermediateCallers = intermediateCallers ?? new(),
         ModuleFanIn = entryPoints.Where(e => e.IsConfirmedBinding).GroupBy(e => e.Project).ToDictionary(g => g.Key, g => g.Count()),
         Predecessors = new(),
     };
