@@ -55,8 +55,9 @@ internal static class IndexPathResolver
     /// <see cref="ProjectRegistry.RepoOf"/> defaults to the solution's own directory, which for <c>src/App.sln</c>
     /// is <c>&lt;root&gt;/src</c>, not the git root. meta.json's solutionPath (and so slice's path arithmetic) is
     /// relative to the git root, so ask git for it; if git cannot answer, the registry's value is the best guess left.
+    /// The MCP server's ProjectResolver uses this too, so a tool call and the CLI agree on where a project's repo is.
     /// </summary>
-    private static string GitRootOrSelf(string repoPath)
+    internal static string GitRootOrSelf(string repoPath)
         => Path.GetFullPath((Directory.Exists(repoPath) ? GitRepoInfo.TryGetRepoRoot(repoPath) : null) ?? repoPath);
 }
 
