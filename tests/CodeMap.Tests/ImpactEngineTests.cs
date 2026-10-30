@@ -390,6 +390,83 @@ public class ImpactEngineTests
         Assert.IsTrue(result.BlindSpots.Any(b => b.Contains("inferred", StringComparison.OrdinalIgnoreCase)));
     }
 
+    // ---- via:"override" and via:"delegate", the scan's newer edge kinds ------------------------------------------
+
+    [TestMethod] // `items.Select(Map)` is written in the caller's code: a reference, not an expansion the scan inferred
+    public void Caller_that_passes_the_method_as_a_delegate_is_not_counted_as_inferred()
+    {
+        var index = BuildIndex(
+            symbols: new[] { "T:Map", "T:Caller" },
+            edges: Array.Empty<(string, string)>(), entryPoints: Array.Empty<string>(),
+            extraEdges: new[] { Edge("T:Caller", "T:Map", via: "delegate") });
+
+        var result = ImpactEngine.Traverse(index, "T:Map", depth: 3);
+
+        Assert.AreEqual(1, result.DirectFanIn);
+        Assert.AreEqual(0, result.DirectCallersInferred);
+    }
+
+    [TestMethod] // a call through the base type reaches every override; which one runs is decided at runtime
+    public void Caller_reaching_an_override_only_through_override_expansion_is_counted_as_inferred()
+    {
+        var index = BuildIndex(
+            symbols: new[] { "T:Override", "T:Caller" },
+            edges: Array.Empty<(string, string)>(), entryPoints: Array.Empty<string>(),
+            extraEdges: new[] { Edge("T:Caller", "T:Override", via: "override") });
+
+        var result = ImpactEngine.Traverse(index, "T:Override", depth: 3);
+
+        Assert.AreEqual(1, result.DirectCallersInferred);
+    }
+
+    [TestMethod]
+    public void Override_hops_are_counted_and_noted_as_a_blind_spot()
+    {
+        var index = BuildIndex(
+            symbols: new[] { "T:Override", "T:Caller" },
+            edges: Array.Empty<(string, string)>(), entryPoints: Array.Empty<string>(),
+            extraEdges: new[] { Edge("T:Caller", "T:Override", via: "override") });
+
+        var result = ImpactEngine.Traverse(index, "T:Override", depth: 3);
+
+        Assert.AreEqual(1, result.ViaOverrideCount);
+        Assert.IsTrue(result.BlindSpots.Any(b => b.Contains("override", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod] // same weight as an interface hop: both are a static expansion that the runtime may not take
+    public void Override_hops_raise_the_risk_score_like_interface_hops()
+    {
+        static int RiskWith(string? via)
+        {
+            var index = BuildIndex(
+                symbols: new[] { "T:Target", "T:Ep", "T:C1", "T:C2", "T:C3" },
+                edges: Array.Empty<(string, string)>(), entryPoints: new[] { "T:Ep" },
+                extraEdges: new[]
+                {
+                    Edge("T:Ep", "T:Target", via: via), Edge("T:C1", "T:Target", via: via),
+                    Edge("T:C2", "T:Target", via: via), Edge("T:C3", "T:Target", via: via),
+                });
+            return ImpactEngine.Traverse(index, "T:Target", depth: 3).RiskScore;
+        }
+
+        Assert.IsTrue(RiskWith("override") > RiskWith(null));
+        Assert.AreEqual(RiskWith("interface"), RiskWith("override"));
+    }
+
+    [TestMethod] // the method runs only when whoever holds the delegate invokes it, which may be later or never
+    public void Delegate_edges_are_counted_and_noted_as_a_blind_spot()
+    {
+        var index = BuildIndex(
+            symbols: new[] { "T:Map", "T:Caller" },
+            edges: Array.Empty<(string, string)>(), entryPoints: Array.Empty<string>(),
+            extraEdges: new[] { Edge("T:Caller", "T:Map", via: "delegate") });
+
+        var result = ImpactEngine.Traverse(index, "T:Map", depth: 3);
+
+        Assert.AreEqual(1, result.ViaDelegateCount);
+        Assert.IsTrue(result.BlindSpots.Any(b => b.Contains("delegate", StringComparison.OrdinalIgnoreCase)));
+    }
+
     private static ImpactIndex BuildIndex(
         IEnumerable<string> symbols, IEnumerable<(string From, string To)> edges, IEnumerable<string> entryPoints,
         Dictionary<string, string>? projectOverrides = null, string entryPointType = "handler",

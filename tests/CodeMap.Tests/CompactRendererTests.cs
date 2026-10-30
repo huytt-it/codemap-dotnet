@@ -94,7 +94,7 @@ public class CompactRendererTests
         var markdown = CompactRenderer.Render(result, full: false, meta: null);
 
         StringAssert.Contains(markdown, "Direct fan-in: 3 distinct caller(s)");
-        StringAssert.Contains(markdown, "1 only through interface/MediatR expansion");
+        StringAssert.Contains(markdown, "1 only through interface/MediatR/override expansion");
     }
 
     [TestMethod]
@@ -182,9 +182,19 @@ public class CompactRendererTests
         StringAssert.Contains(markdown, "(route not resolved)");
     }
 
+    [TestMethod]
+    public void Risk_line_counts_override_hops()
+    {
+        var entryPoints = new List<ReachedEntryPoint> { new("M:A", "A", "handler", null, null, "Proj.A", 1) };
+
+        var markdown = CompactRenderer.Render(BuildResult(isHub: false, entryPoints, viaOverride: 3), full: false, meta: null);
+
+        StringAssert.Contains(markdown, "3 override hop(s)");
+    }
+
     private static ImpactResult BuildResult(
         bool isHub, List<ReachedEntryPoint> entryPoints, int? directFanIn = null, int directCallersInferred = 0,
-        int viaInterface = 0, int viaInterfaceUnconfirmed = 0, List<ReachedScreen>? screens = null) => new()
+        int viaInterface = 0, int viaInterfaceUnconfirmed = 0, List<ReachedScreen>? screens = null, int viaOverride = 0) => new()
     {
         SymbolId = "M:Target",
         DisplayName = "Target",
@@ -198,6 +208,7 @@ public class CompactRendererTests
         ViaInterfaceCount = viaInterface,
         ViaInterfaceUnconfirmedCount = viaInterfaceUnconfirmed,
         ViaMediatrCount = 0,
+        ViaOverrideCount = viaOverride,
         EntryPoints = entryPoints,
         Screens = screens ?? new(),
         TestsReached = new(),

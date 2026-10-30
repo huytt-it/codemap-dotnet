@@ -46,7 +46,7 @@ public static class CompactRenderer
     private static string DirectFanInText(ImpactResult result)
     {
         var inferred = result.DirectCallersInferred > 0
-            ? $"; {result.DirectCallersInferred} only through interface/MediatR expansion"
+            ? $"; {result.DirectCallersInferred} only through interface/MediatR/override expansion"
             : "";
         return $"{result.DirectFanIn} distinct caller(s) (methods that call or construct it, once each{inferred})";
     }
@@ -201,7 +201,7 @@ public static class CompactRenderer
         sb.AppendLine($"## Risk score: {result.RiskScore}/10");
         sb.AppendLine(
             $"{result.EntryPoints.Count - unconfirmedEntryPoints} entry point(s) · {result.TestsReached.Count} test(s) · " +
-            $"{confirmedInterfaceHops} interface hop(s) · {result.ViaMediatrCount} MediatR hop(s)");
+            $"{confirmedInterfaceHops} interface hop(s) · {result.ViaOverrideCount} override hop(s) · {result.ViaMediatrCount} MediatR hop(s)");
         if (unconfirmedEntryPoints > 0 || result.ViaInterfaceUnconfirmedCount > 0)
             sb.AppendLine(
                 "Not counted in the score — reachable only through an implementation DI does not bind at that call site: " +
