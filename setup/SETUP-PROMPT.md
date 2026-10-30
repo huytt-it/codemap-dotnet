@@ -1,236 +1,181 @@
 # Prompt bảo AI setup CodeMap thay bạn
 
-**Làm trước, tự tay:** clone repo này về máy. Prompt bên dưới **không** cho agent tự clone — nó sẽ hỏi bạn
-đường dẫn tới thư mục đã có.
+Dùng khi cài CodeMap lên một máy mới. Mỗi máy làm lại một lần: registry, file instructions và cấu hình
+MCP nằm ở thư mục người dùng, không đi theo git.
+
+**Làm trước, tự tay:** clone repo này về máy. Prompt **không** cho agent tự clone; nó sẽ hỏi bạn đường dẫn.
 
 ```bash
 git clone https://github.com/huytt-it/codemap-dotnet.git
 ```
 
-Sau đó copy **toàn bộ khối trong khung bên dưới** dán vào Copilot Chat (chế độ Agent), Claude Code, Cursor —
-bất cứ AI nào chạy được lệnh terminal. Không cần sửa gì trước: prompt tự dò môi trường và tự hỏi lại bạn
-khi thiếu thông tin.
-
-Nếu AI của bạn **không chạy được lệnh** (Copilot Chat chế độ Ask chẳng hạn), nó sẽ in lệnh ra cho bạn
-chạy tay từng bước — vẫn dùng được, chỉ chậm hơn.
+Sau đó copy **toàn bộ khối trong khung bên dưới** và dán vào Copilot Chat ở chế độ **Agent** (hoặc Claude
+Code, Cursor: AI nào chạy được lệnh terminal cũng được). Không cần sửa gì trước. Mọi đường dẫn, số repo và
+thư mục đặt index đều do bạn quyết định; agent sẽ hỏi.
 
 ---
 
 ```
-Bạn giúp tôi cài đặt CodeMap trên máy này và cấu hình cho AI agent dùng được. Làm tuần tự, mỗi bước
+Bạn giúp tôi cài CodeMap trên máy này để agent trong VS Code dùng được qua MCP. Làm tuần tự, mỗi bước
 kiểm chứng bằng lệnh thật rồi mới sang bước sau. Không giả định kết quả, không bịa đường dẫn.
 
-QUAN TRỌNG: tôi ĐÃ TỰ CLONE source CodeMap về máy rồi. TUYỆT ĐỐI KHÔNG chạy `git clone`, không tải
-source từ đâu về, không tự tạo lại project. Bạn chỉ làm việc trên thư mục tôi chỉ ra ở Bước 2.
+LUẬT CHUNG, áp dụng cho mọi bước:
+- Tôi ĐÃ TỰ CLONE source CodeMap. KHÔNG chạy `git clone`, không tải source từ đâu về.
+- KHÔNG sửa PowerShell profile, PATH hệ thống, không xin quyền admin.
+- KHÔNG ghi, sửa hay xoá bất kỳ file nào BÊN TRONG các repo tôi muốn index (kể cả .gitignore, .github/,
+  .vscode/, codemap.config.json), và không chạy lệnh có thể ghi vào đó (`dotnet restore`, `npm install`...)
+  nếu tôi chưa đồng ý rõ ràng. Mọi thứ CodeMap cần đặt ở thư mục người dùng hoặc ở thư mục tôi chỉ định.
+- Đường dẫn, số lượng repo, thư mục đặt index: HỎI TÔI. Được đề xuất, không được tự quyết.
+- Trước khi ghi một file ngoài thư mục CodeMap, nói cho tôi biết sẽ ghi file nào, nội dung gì.
 
-## Bước 1 — Kiểm tra môi trường
+## Bước 1 — Môi trường
 Chạy `dotnet --list-sdks` và `git --version`.
-- Cần .NET SDK phiên bản 8, 9 hoặc 10 — BẤT KỲ bản nào trong ba là đủ. Đừng bắt tôi cài đúng .NET 8.
-- Nếu không có SDK nào: dừng lại, đưa tôi link tải, đừng tự tải về.
-Báo tôi biết bạn thấy SDK nào.
+- Cần .NET SDK 8, 9 HOẶC 10, bản nào cũng được. Không có thì dừng lại, đưa tôi link tải.
+Báo tôi thấy những gì.
 
-## Bước 2 — Build từ source tôi đã clone sẵn
-Hỏi tôi đường dẫn tới thư mục CodeMap tôi đã clone. Đừng đoán, đừng đi dò khắp ổ đĩa, và
-nhắc lại: đừng clone.
-
-Trước khi build, xác nhận đúng thư mục bằng cách kiểm tra có đủ 3 thứ sau (không đủ thì báo tôi,
-đừng tự sửa):
-  - file `CodeMap.slnx`
-  - thư mục `CodeMap.Cli`
-  - thư mục `tests/CodeMap.Tests`
-
-Rồi từ chính thư mục đó:
+## Bước 2 — Build từ source tôi đã clone
+Hỏi tôi đường dẫn thư mục CodeMap. Xác nhận đúng thư mục: phải có `CodeMap.slnx`, `CodeMap.Cli/`,
+`tests/CodeMap.Tests/`. Thiếu thì báo tôi, đừng tự sửa. Rồi chạy từ thư mục đó:
   dotnet build CodeMap.Cli -c Release
-Nếu build lỗi, dán nguyên văn lỗi cho tôi, đừng tự sửa code.
+Lỗi thì dán nguyên văn cho tôi, đừng tự sửa code.
 
-## Bước 3 — Cài lệnh `codemap` (thử theo đúng thứ tự này)
-Vẫn đứng trong thư mục CodeMap ở Bước 2.
-
-Cách A — ưu tiên, không cần quyền admin, không sửa PowerShell profile:
+## Bước 3 — Cài lệnh `codemap`
+Cách A (ưu tiên, không cần admin), từ thư mục CodeMap:
   dotnet pack CodeMap.Cli -c Release
   dotnet tool install --global --add-source ./nupkg CodeMap.Cli
-Kiểm chứng bằng cách mở shell mới và chạy `codemap` (không tham số) — phải in ra hướng dẫn sử dụng.
+Nếu báo đã cài rồi: thay `install` bằng `update` (bản cũ có thể chưa có lệnh `codemap mcp`).
+Kiểm chứng: mở shell mới, chạy `codemap --help`. Output phải có dòng `codemap mcp`.
 
-Nếu Cách A bị chính sách máy chặn: ĐỪNG cố sửa PowerShell profile, ĐỪNG cố sửa PATH hệ thống,
-ĐỪNG xin quyền admin. Chuyển sang Cách B: ghi nhớ đường dẫn đầy đủ tới
-`CodeMap.Cli/bin/Release/net8.0/CodeMap.Cli.dll` và từ đây về sau gọi qua `dotnet <đường-dẫn-dll>`.
-Nói rõ cho tôi biết bạn đang dùng cách nào.
+Nếu Cách A bị chính sách máy chặn: dùng Cách B, gọi thẳng
+`dotnet <thư mục CodeMap>/CodeMap.Cli/bin/Release/net8.0/CodeMap.Cli.dll`. Từ đây về sau, mọi chỗ ghi
+`codemap` hiểu là lệnh đó. Nói rõ tôi đang dùng cách nào.
 
-## Bước 4 — Quyết định phạm vi, rồi khai báo project vào codemap.projects.json
+## Bước 4 — Hỏi tôi các lựa chọn, trong MỘT lượt
+Hỏi gộp các câu sau, chờ tôi trả lời hết rồi mới làm tiếp:
+  1. Các repo backend cần index nằm ở đâu? Tôi có thể đưa từng đường dẫn, hoặc một thư mục chứa nhiều
+     repo. Nếu là thư mục chứa: liệt kê các file .sln/.slnx tìm được (chỉ đọc, sâu tối đa 3 cấp, bỏ qua
+     bin/obj/node_modules) để tôi chọn. Số repo là bao nhiêu cũng được.
+  2. Đặt index ở thư mục nào? Đề xuất một thư mục chung NGOÀI mọi repo, ví dụ `D:/CodeMapIndex`. Mỗi
+     project sẽ nằm ở `<thư mục đó>/<tên project>`.
+  3. Với từng repo đã chọn: tên ngắn (không dấu, không trùng), mô tả một dòng, ngôn ngữ team viết
+     commit/ticket (ja / vi / en / ...), và có frontend Angular/TypeScript riêng không (đường dẫn).
+     Đề xuất sẵn tên và mô tả từ tên solution để tôi chỉ việc sửa.
+  4. Trong VS Code tôi thường mở thư mục nào: một thư mục cố định (ví dụ thư mục chứa các repo), hay
+     mỗi lần một repo khác nhau?
 
-**Hỏi tôi TRƯỚC TIÊN, chỉ 1 câu này, và nhớ câu trả lời cho suốt các bước còn lại (đừng hỏi lại
-ở Bước 7):** tôi định dùng CodeMap cho đúng 1 project này thôi, hay nhiều project và sẽ thêm/bớt
-theo thời gian?
-
-- **Nhiều project / sẽ thêm bớt** → tạo file **thẳng tại `~/.codemap/codemap.projects.json`**
-  (trên Windows là `C:\Users\<tên tôi>\.codemap\codemap.projects.json`). **KHÔNG tạo
-  `setup/codemap.projects.json` bên trong thư mục CodeMap** — nếu để đó, lệnh `codemap` chạy từ
-  bên trong thư mục CodeMap sẽ vô tình ăn nhầm bản này thay vì bản global (`codemap.projects.json`
-  gần cwd hơn luôn được ưu tiên so với bản ở `~/.codemap/`), 2 bản sẽ lệch dần mà không ai biết.
-  Vì đường dẫn giờ nằm ngoài mọi repo, **mọi giá trị `solution`/`output`/`repo`/`frontend` phải
-  là đường dẫn tuyệt đối** (`D:/Repos/...`), không dùng đường dẫn tương đối.
-- **Chỉ 1 project** → đặt ở gốc repo đích cũng được, đơn giản hơn.
-
-Hỏi tôi (đừng đoán), cho TỪNG codebase tôi muốn index:
-  1. Đường dẫn repo, và file solution nào (.sln hoặc .slnx — CodeMap đọc được cả hai)
-  2. Muốn để index ở đâu. Gợi ý: một thư mục chung ngoài repo, ví dụ `D:/CodeMapIndex/<tên>`.
-     Nếu tôi chọn để trong repo, nhớ thêm thư mục đó vào .gitignore của repo đó.
-  3. Có frontend Angular/TypeScript riêng không (đường dẫn), nếu có. Hỏi thêm 1 câu:
-     frontend đó có gọi sang NHIỀU backend không, và backend này có phục vụ NHIỀU frontend
-     không — xem ghi chú "một entry = một cặp" bên dưới.
-  4. Team tôi viết commit/ticket bằng ngôn ngữ nào (ja / vi / en / ...)
-
-Dùng nội dung mẫu trong `setup/codemap.projects.example.json` (có ví dụ đủ 4 tình huống: có FE
-riêng / không FE / solution nằm sâu cần chỉ rõ `repo` / 1 FE gọi 2 BE tách thành 2 entry) làm
-tham khảo cấu trúc, nhưng **ghi
-thẳng vào vị trí đã chọn ở trên** — đừng copy ra `setup/` trước rồi tính di chuyển sau, dễ quên.
-Định dạng:
+## Bước 5 — Registry
+Ghi `~/.codemap/codemap.projects.json` (Windows: `C:\Users\<tôi>\.codemap\codemap.projects.json`).
+Mọi đường dẫn trong file là TUYỆT ĐỐI. Mỗi repo một entry:
 
 {
   "projects": [
     {
-      "name": "<tên ngắn, không dấu>",
-      "description": "<mô tả codebase này là gì>",
-      "solution": "<đường dẫn .sln hoặc .slnx>",
-      "output": "<thư mục output>",
-      "frontend": "<thư mục FE, BỎ HẲN khoá này nếu không có>",
+      "name": "<tên ngắn>",
+      "description": "<mô tả>",
+      "solution": "<đường dẫn .sln/.slnx>",
+      "output": "<thư mục index>/<tên ngắn>",
+      "frontend": "<thư mục FE; BỎ HẲN khoá này nếu không có>",
       "commitLanguage": "<ja|vi|en|...>"
     }
   ]
 }
 
-**Một entry = một cặp (backend, frontend).** `link` chỉ khớp lời gọi FE với endpoint BE
-*trong cùng một index*, nên mỗi entry chỉ nhận đúng 1 `solution` và 1 `frontend`. Nếu tôi trả
-lời là FE gọi nhiều BE (hoặc BE phục vụ nhiều FE), **đừng nhét nhiều đường dẫn vào một entry và
-đừng bịa ra khoá mới** — tạo mỗi cặp một entry, cùng một đường dẫn FE được phép lặp lại ở nhiều
-entry, đặt `name` cho thấy rõ cặp nào (`shop-orders`, `shop-billing`). Nói trước cho tôi 2 hệ quả:
-mỗi entry quét độc lập nên BE dùng chung bị quét lại nhiều lần; và trong `diagnostics.json` của
-từng cặp, lời gọi FE nhắm sang BE khác sẽ nằm ở mục "unmatched frontend calls" — đó là ngoài
-phạm vi cặp đó, không phải link hỏng, đừng báo cho tôi như thể là lỗi.
+Nếu file đã tồn tại: đọc nó, cho tôi xem, rồi THÊM entry mới vào. Không xoá entry cũ nếu tôi không bảo.
+Một frontend gọi nhiều backend: mỗi cặp (backend, frontend) một entry, cùng đường dẫn FE được lặp lại,
+không bịa khoá mới.
+Xong chạy `codemap projects`. Dòng đầu "Registry: ..." phải trỏ đúng file vừa ghi; trỏ chỗ khác nghĩa là
+còn một bản `codemap.projects.json` cũ gần thư mục hiện tại hơn: báo tôi.
 
-Xong thì chạy `codemap projects` để tôi xem lại đường dẫn đã resolve đúng chưa, và dòng đầu tiên
-của output ("Registry: ...") có trỏ đúng vào file bạn vừa tạo không — nếu trỏ vào chỗ khác thì có
-một bản `codemap.projects.json` khác đang che khuất, phải tìm và xoá nó.
+## Bước 6 — Quy ước ticket (kiểm trước khi quét)
+Với từng repo, chạy `git log --pretty=format:"%s%n%b" -80` trong repo đó (chỉ đọc) và đọc message thật.
+Mẫu mặc định là `(?:#|TICKET-|BUG-|JIRA-)(\d{3,6})`. Tự kiểm ba điều:
+  1. Mặc định khớp chưa chắc đã đúng: GitHub squash-merge gắn số PR vào cuối message (`Fix cancel (#1019)`),
+     và mẫu mặc định sẽ gom theo SỐ PR. Message có prefix riêng (`SHO_1234`, `ABC-42`...) thì cần mẫu riêng.
+  2. Nhóm bắt thứ nhất là ID ticket, nên phải bao cả cụm: `([A-Z][A-Z0-9]*_\d+)`, không phải
+     `(?:SHO|ABC)_(\d+)` (cách sau gộp `SHO_1234` và `ABC_1234` thành một ticket).
+  3. Trong JSON viết `\\d`.
+Cần mẫu riêng thì ghi `codemap.config.json` (`{ "ticketPattern": "..." }`). Tool chỉ tìm file này ngược
+lên từ thư mục repo, nên để KHÔNG ghi vào repo, đặt nó ở một thư mục cha nằm NGOÀI repo, và nó áp dụng
+cho mọi repo bên dưới. Đề xuất cho tôi thư mục cha cụ thể. Nếu các repo dưới cùng thư mục cha cần mẫu
+khác nhau, hoặc không có thư mục cha nào nằm ngoài repo, hỏi tôi muốn làm sao.
 
-## Bước 5 — Quét
-  codemap sync --project <tên>      (hoặc `codemap sync --all` nếu khai báo nhiều project)
+## Bước 7 — Quét
+  codemap sync --all
+Quét chỉ ghi vào thư mục index (cùng một file khoá và một thư mục tạm cạnh nó), không ghi vào repo.
+- Kiểm `<output>/index/sync-complete.json` của từng project: có file là sync hoàn tất, `steps` ghi bước
+  nào bị bỏ qua. Không chỉ dựa vào `meta.json`.
+- `scan` lỗi: báo tôi. Có thể cần `dotnet restore` trong repo (lệnh này ghi vào obj/ của repo), nên hỏi
+  tôi trước. Phương án không đụng repo: `codemap scan --solution ... --out <output> --syntax-only` (nông
+  hơn: thiếu lời gọi sang kiểu của NuGet/framework).
+- Có frontend mà `scan-fe` bị bỏ qua: thư mục FE cần `npm install`. Hỏi tôi, đừng tự chạy.
+- In cho tôi 10 ticket đầu trong `<output>/index/ticket-files.jsonl` của mỗi project và hỏi: đây có đúng
+  là mã ticket của team không, hay là số PR. Chỉ đi tiếp khi tôi xác nhận.
 
-Lưu ý khi chạy:
-- `sync` dựng index mới ở thư mục tạm rồi mới thay index cũ, nên lỗi giữa chừng không làm hỏng
-  index đang có. Xong thì kiểm `<output>/index/sync-complete.json` (hoặc dòng `sync :` trong
-  `codemap projects`): có file này nghĩa là lần sync đã hoàn tất, và `steps` ghi bước nào bị bỏ
-  qua. Đừng chỉ dựa vào việc `meta.json` tồn tại.
-- `scan` lỗi → thử `dotnet restore` trong repo trước, rồi chạy lại. Vẫn lỗi thì báo tôi;
-  còn cách `codemap scan --solution ... --out ... --syntax-only` quét nông hơn (vẫn có cạnh gọi,
-  entry point và DI, nhưng thiếu các lời gọi sang kiểu của NuGet/framework).
-- **Quy ước ticket: kiểm TRƯỚC khi chạy, đừng chờ lỗi.** Chạy `git log --pretty=format:"%s%n%b" -80`
-  trong repo đích (tool đọc cả subject lẫn body, và lấy mọi mã ticket trong một commit), đọc
-  message thật, rồi tự quyết định có cần `ticketPattern` riêng không.
-  Mẫu mặc định là `(?:#|TICKET-|BUG-|JIRA-)(\d{3,6})`. Ba điều phải tự kiểm:
+## Bước 8 — File instructions cho agent
+  mkdir -p ~/.copilot/instructions
+  cp <thư mục CodeMap>/setup/codemap.instructions.md ~/.copilot/instructions/codemap.instructions.md
+Nếu đã có bản cũ ở đó: ghi đè sau khi báo tôi. Phần "Ngôn ngữ" trong file viết cho commit tiếng Nhật;
+nếu commitLanguage của tôi khác, sửa bản vừa chép cho khớp.
+Rồi tìm (chỉ đọc) các bản instructions CodeMap cũ có thể làm agent bỏ qua MCP: file khác trong
+`~/.copilot/instructions/` nhắc tới codemap, và `.github/copilot-instructions.md` hoặc
+`.github/instructions/*` trong các repo đã chọn có nhắc tới codemap. Chỉ BÁO tôi đường dẫn, không tự xoá
+hay sửa file trong repo.
 
-  1. **Mặc định "khớp" không có nghĩa là khớp đúng.** GitHub squash-merge gắn số PR vào cuối
-     message (`Fix cancel order (#1019)`), và mẫu mặc định khớp đúng cái đó — kết quả là gom
-     commit theo **số PR**, không phải theo ticket, mà không báo lỗi gì. Nếu message có prefix
-     dự án riêng (`SHO_1234`, `MONKAI_1234`, `ABC-42`...), phải đặt `ticketPattern` cho khớp
-     prefix đó, kể cả khi mặc định không báo lỗi.
-  2. **Nhóm bắt phải bao cả cụm, không chỉ phần số.** Tool lấy nhóm bắt thứ nhất làm ID ticket.
-     Viết `(?:SHO|MONKAI)_(\d+)` thì `SHO_1234` và `MONKAI_1234` cùng ra ID `1234` và **bị gộp
-     thành một ticket** — sai dữ liệu, không có cảnh báo. Viết `([A-Z][A-Z0-9]*_\d+)` để ID là
-     cả cụm `SHO_1234`; mẫu này cũng không cần liệt kê prefix nên thêm dự án mới vẫn tự khớp.
-  3. **Trong JSON phải escape thành `\d`.** Viết `\d` thì tool báo lỗi parse rõ ràng, sửa lại.
+## Bước 9 — MCP server cho VS Code (cấp user, không đụng repo)
+Thêm server vào cấu hình MCP cấp user của VS Code (lệnh "MCP: Open User Configuration" mở đúng file này):
+  Windows: %APPDATA%\Code\User\mcp.json
+  macOS:   ~/Library/Application Support/Code/User/mcp.json
+  Linux:   ~/.config/Code/User/mcp.json
+File đã có server khác thì giữ nguyên, chỉ thêm mục "codemap". File rỗng thì tạo { "servers": { ... } }.
 
-  Đặt file ở **GỐC REPO BỊ QUÉT** với tên `codemap.config.json` (khác `codemap.projects.json` ở
-  Bước 4 — đừng gộp làm một). Chạy `scan-git` xong thì **in cho tôi 10 ticket đầu trong
-  `<output>/index/ticket-files.jsonl`** và hỏi lại: đây có đúng là mã ticket của team tôi không,
-  hay là số PR. Chỉ đi tiếp khi tôi xác nhận.
+  "codemap": {
+    "type": "stdio",
+    "command": "codemap",
+    "args": ["mcp", "--config", "<đường dẫn tuyệt đối tới ~/.codemap/codemap.projects.json>",
+             "--workspace", "<thư mục ở câu 4 Bước 4>"]
+  }
 
-  Nếu `scan-git` báo thẳng "No ticket ID matched" thì cũng làm đúng quy trình trên (lúc đó
-  `co-change.jsonl` vẫn được ghi, chỉ thiếu `ticket-files.jsonl`, và lệnh thoát với mã 2).
-  Với merge commit kiểu `Merge pull request #4 from org/SHO_1234-fix`: tool lấy danh sách file
-  của merge theo first-parent, và khi dùng mẫu mặc định thì **bỏ qua số PR** (`#4`); mã ticket
-  trong tên nhánh vẫn được lấy nếu `ticketPattern` khớp nó.
-- `scan-fe` bị bỏ qua → thư mục FE phải đã chạy `npm install`. Không có FE riêng thì đúng là
-  phải bỏ qua, đừng bịa ra.
+- Cách B (không cài được tool): "command": "dotnet", và thêm đường dẫn CodeMap.Cli.dll làm phần tử đầu
+  của "args".
+- Dùng đường dẫn tuyệt đối, KHÔNG dùng ${workspaceFolder}.
+- Tôi mở MỘT thư mục cố định: --workspace là thư mục đó. Nếu nó chứa nhiều project, lần gọi đầu của mỗi
+  chat sẽ báo AMBIGUOUS_PROJECT kèm danh sách và agent gọi lại với project=<tên>. Đó là bình thường.
+- Tôi mở mỗi lần một repo khác: BỎ cặp "--workspace" và giá trị của nó. Server dùng thư mục VS Code
+  khởi động nó; không khớp project nào thì tool báo NOT_INDEXED kèm danh sách project.
 
-Sau khi xong, chạy `codemap projects` để xác nhận trạng thái index, rồi mở `<output>/MAP.md`
-và tóm tắt cho tôi: bao nhiêu project, bao nhiêu entry point, mục Blind Spots nói gì.
-
-## Bước 6 — Quyền tự chạy lệnh
-Hỏi tôi: muốn agent (bạn) tự chạy các lệnh `codemap` chỉ-đọc (`find`/`where`/`impact`/`slice`/
-`projects`) mà không cần dán tay vào terminal mỗi lần không, hay muốn giữ nguyên kiểu "agent in
-lệnh, tôi tự chạy, tự dán output"?
-
-Nếu tôi đồng ý cho tự chạy: copy `setup/codemap.permissions.json` từ thư mục CodeMap ra CÙNG chỗ
-với `codemap.projects.json` đã tạo ở Bước 4 (không phải trong `.github/`). Giữ nguyên default trong đó
-(`find`/`where`/`impact`/`slice`/`projects` = true; `scan`/`sync`/`map`/`link` = false) trừ khi
-tôi nói rõ muốn đổi khác. KHÔNG tự ý đổi `autoRun` của lệnh nào tôi không nhắc tới.
-
-Nếu tôi không muốn: bỏ qua bước này, không tạo file. Mặc định không có file này thì mọi lệnh
-đều phải hỏi trước — an toàn.
-
-## Bước 7 — Cấu hình cho AI agent
-**Dùng lại đúng câu trả lời "1 project hay nhiều project" đã hỏi ở Bước 4 — đừng hỏi lại.**
-
-- **Nhiều project / sẽ thêm bớt** (Bước 4 đã đặt registry ở `~/.codemap/`) → đặt
-  `setup/codemap.instructions.md` ở vị trí user-level tương ứng, áp dụng cho MỌI workspace trên
-  máy tôi, không cần lặp lại bước này khi thêm project mới:
-    mkdir -p ~/.copilot/instructions
-    cp setup/codemap.instructions.md ~/.copilot/instructions/codemap.instructions.md
-  (Trên Windows, `~` là `C:\Users\<tên tôi>\`.)
-
-- **Chỉ 1 project** (Bước 4 đã đặt registry ở gốc repo đích) → đặt instructions theo repo, cùng
-  tinh thần với registry:
-    mkdir -p <đường-dẫn-repo-đích>/.github/instructions
-    cp setup/codemap.instructions.md <đường-dẫn-repo-đích>/.github/instructions/codemap.instructions.md
-  Lưu ý cách này chỉ có tác dụng khi workspace root đúng là repo đó.
-
-Nếu registry đặt ở `~/.codemap/` (nhiều project) mà instructions lại đặt theo repo (`.github/instructions/`),
-hoặc ngược lại, thì 2 nơi sẽ không khớp phạm vi nhau — luôn dùng CÙNG MỘT lựa chọn cho cả hai.
-
-**Tuyệt đối không đặt tên file là `copilot-instructions.md`** — đó là tên dành riêng cho 1 file
-duy nhất ở gốc mỗi repo theo quy ước GitHub Copilot, nếu tôi đã có file đó cho mục đích khác thì
-copy đè vào sẽ mất nội dung cũ. Giữ nguyên tên `codemap.instructions.md`.
-
-File đó đã tự đọc `codemap.projects.json` và `codemap.permissions.json` nên KHÔNG cần điền
-đường dẫn tay. Nhưng phải kiểm 2 điều:
-- Agent có tìm thấy `codemap.projects.json` (và `codemap.permissions.json` nếu có ở Bước 6) từ
-  vị trí vừa chọn ở trên không (tool tìm ngược lên thư mục cha, và cả `~/.codemap/`). Nếu chọn
-  cách user-level ở trên, đặt `codemap.projects.json`/`codemap.permissions.json` ở `~/.codemap/`
-  cũng là hợp lý nhất — cùng tinh thần "1 chỗ cho mọi project". Không tìm thấy thì hỏi tôi.
-- Phần "Ngôn ngữ" trong file đang viết sẵn cho codebase commit tiếng Nhật. Nếu `commitLanguage`
-  của tôi khác, sửa lại cho khớp — đừng để nguyên nếu không đúng.
-
-## Bước 8 — Kiểm chứng end-to-end
-Chạy thử một truy vấn thật rồi cho tôi xem output:
-  codemap where --project <tên> --query "<mô tả nghiệp vụ, bằng đúng ngôn ngữ team tôi viết commit>"
-Lấy một docId `M:...` từ kết quả rồi chạy:
-  codemap impact --project <tên> --symbol "<docId>"
-
-Nếu tôi chọn "nhiều project" ở Bước 4, chạy thêm `codemap projects` từ MỘT thư mục khác hẳn
-(ví dụ từ chính thư mục repo đích, không phải từ thư mục CodeMap) — dòng "Registry: ..." đầu
-output phải trỏ đúng vào `~/.codemap/codemap.projects.json`. Nếu trỏ vào chỗ khác, nghĩa là còn
-sót một bản `codemap.projects.json` cũ nằm gần cwd hơn — tìm và xoá nó (`find` tên file này trên
-các thư mục tôi đã làm việc cùng trong session này), rồi chạy lại để xác nhận.
-
-Cuối cùng tổng kết ngắn gọn cho tôi:
-- Đang dùng cách cài nào (A hay B), gõ lệnh gì để dùng hằng ngày
-- Tôi chọn "1 project" hay "nhiều project" ở Bước 4, registry + instructions đang đặt ở đâu
-- Có bật quyền tự chạy lệnh không (Bước 6), nếu có thì lệnh nào
-- Cần chạy lại lệnh nào khi code đổi nhiều (`codemap sync --project ...`)
-- Bước nào đã bỏ qua và vì sao (không có FE, không có ticket...)
+## Bước 10 — Kiểm chứng và tổng kết
+1. Kiểm index bằng CLI: chạy `codemap where --project <tên> --query "<mô tả nghiệp vụ, bằng ngôn ngữ
+   commit của team>"`, lấy một docId `M:...` trong kết quả, rồi chạy
+   `codemap impact --project <tên> --symbol "<docId>"`. Cho tôi xem output.
+2. Nhắc tôi: THOÁT HẲN VS Code (File > Exit, đóng mọi cửa sổ) rồi mở lại. Agent chỉ nạp instructions và
+   cấu hình MCP lúc VS Code khởi động; Reload Window và chat mới đều không đủ. Sau đó mở chat mới (chế độ
+   Agent) và hỏi một câu như "Nếu tôi sửa <Class.Method> thì ảnh hưởng tới đâu?". Agent phải tự tìm và
+   gọi tool `codemap_impact`. Nếu nó in lệnh cho tôi chạy thay vì gọi tool, xem lại các bản instructions
+   cũ đã báo ở Bước 8.
+3. Tổng kết ngắn:
+   - cách cài (A hay B) và lệnh dùng hằng ngày;
+   - danh sách project, thư mục index, vị trí registry, instructions, mcp.json, codemap.config.json (nếu có);
+   - bước nào bị bỏ qua và vì sao (không có FE, ticket dùng mẫu mặc định...);
+   - lệnh cần chạy khi code đổi nhiều: `codemap sync --project <tên>` hoặc `codemap sync --all`.
 ```
 
 ---
 
 ## Ghi chú cho người dùng
 
-- Prompt này **cấm AI tự `git clone`** — bạn tự clone, rồi chỉ đường dẫn cho nó. Chủ ý: bạn kiểm soát
-  source lấy từ đâu và nằm ở đâu, agent không tự tải code về máy bạn.
-- Prompt này **không** bảo AI sửa PowerShell profile hay PATH hệ thống — cũng là chủ ý, vì nhiều máy công ty
-  chặn. Nếu `dotnet tool install` cũng bị chặn thì Cách B (gọi thẳng dll) luôn chạy được.
-- Quét **nhiều repo**: thêm nhiều entry vào mảng `projects` của cùng một `codemap.projects.json`, rồi `codemap sync --all`. CodeMap chỉ cài một lần.
-- Index không tự cập nhật. Xem [README, Phần 4](../README.md) để biết khi nào cần quét lại.
-- Bước 4 và Bước 7 cố tình bắt AI hỏi phạm vi (1 hay nhiều project) **đúng 1 lần** rồi dùng lại,
-  thay vì hỏi riêng từng bước — làm vậy để tránh registry đặt ở `~/.codemap/` (nhiều project) mà
-  instructions lại đặt theo repo (`.github/instructions/`), 2 nơi không khớp nhau. Nếu AI hỏi lại
-  câu này lần 2, đó là dấu hiệu nó không đọc kỹ prompt — nhắc nó dùng lại câu trả lời cũ.
+- **Mỗi máy chạy prompt một lần.** Registry (`~/.codemap/`), instructions (`~/.copilot/instructions/`) và
+  `mcp.json` của VS Code nằm ngoài git, nên clone repo sang máy khác không mang chúng theo.
+- **Không có gì được ghi vào các repo bạn index.** Prompt cấm việc đó, trừ khi bạn đồng ý cho từng trường
+  hợp: `dotnet restore` khi scan lỗi, `npm install` cho frontend, hay `codemap.config.json` khi không có
+  thư mục cha nào nằm ngoài repo.
+- **Thêm repo sau này:** chạy lại prompt (Bước 5 thêm entry vào registry có sẵn), hoặc tự thêm entry vào
+  `~/.codemap/codemap.projects.json` rồi chạy `codemap sync --project <tên>`. Không cần sửa `mcp.json` nếu
+  repo mới nằm trong thư mục `--workspace` đã chọn.
+- **Agent không chạy được MCP** (công cụ khác VS Code): bỏ Bước 9. File instructions tự lùi về cách cũ:
+  agent in lệnh `codemap` để bạn chạy. Muốn agent tự chạy các lệnh chỉ đọc, chép
+  `setup/codemap.permissions.json` sang `~/.codemap/` (xem Task 3 trong `setup/README.md`).
+- Prompt **cấm AI tự `git clone`** và **không** sửa PowerShell profile hay PATH: bạn kiểm soát source lấy
+  từ đâu, và không vướng chính sách của máy công ty. Cách B (gọi thẳng dll) luôn chạy được khi
+  `dotnet tool install` bị chặn.
+- Index không tự cập nhật. Xem [README, Phần 4](../README.md#part-4--refreshing-the-index) để biết khi nào
+  cần quét lại; server MCP tự nạp index mới khi `codemap sync` xong.
