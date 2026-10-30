@@ -15,6 +15,7 @@ internal sealed class CodeMapToolException(string code, string detail) : McpExce
     public const string AmbiguousProject = "AMBIGUOUS_PROJECT";
     public const string RegistryUnreadable = "REGISTRY_UNREADABLE";
     public const string IndexMissing = "INDEX_MISSING";
+    public const string IndexUnreadable = "INDEX_UNREADABLE";
 
     public string Code { get; } = code;
 }

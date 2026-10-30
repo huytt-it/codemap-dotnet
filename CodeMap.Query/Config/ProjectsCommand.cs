@@ -83,7 +83,7 @@ internal static class ProjectsCommand
         return $"complete, {marker.CompletedAt}{steps}";
     }
 
-    private static string? ReadMetaIndexedAt(string indexDir)
+    internal static string? ReadMetaIndexedAt(string indexDir)
     {
         try
         {
