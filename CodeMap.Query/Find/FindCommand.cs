@@ -42,7 +42,7 @@ internal static class FindCommand
         return 0;
     }
 
-    /// <summary>Exposed for tests. Exact display-name match ranks highest, then exact simple-name, then substring matches.</summary>
+    /// <summary>Exposed for tests. Exact display-name match ranks highest, then exact simple-name, then a `Type.Member` (or longer) ending of the display name, then substring matches.</summary>
     internal static List<(SymbolRecord Symbol, int Score)> Search(List<SymbolRecord> symbols, string query)
     {
         var q = query.Trim();
@@ -62,6 +62,10 @@ internal static class FindCommand
     {
         if (string.Equals(displayName, query, StringComparison.OrdinalIgnoreCase)) return 100;
         if (string.Equals(name, query, StringComparison.OrdinalIgnoreCase)) return 90;
+        // `Type.Member`, the way a method is named in conversation. ContainingType is fully qualified in a real index,
+        // so this is the end of the display name, not all of it. The dot keeps it on whole segments: it does not match
+        // `IBasketService.Add` for `BasketService.Add`, or `Disable2faWarning` for `Controller.Disable2fa`.
+        if (displayName.EndsWith("." + query, StringComparison.OrdinalIgnoreCase)) return 80;
         if (displayName.Contains(query, StringComparison.OrdinalIgnoreCase)) return 70;
         if (name.Contains(query, StringComparison.OrdinalIgnoreCase)) return 60;
         return 0;

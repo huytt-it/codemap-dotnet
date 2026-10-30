@@ -107,6 +107,16 @@ public class ImpactToolTests
         StringAssert.Contains(text, "File: Orders/Svc.cs:30");
     }
 
+    [TestMethod] // `Type.Member` is the form the tool asks for; `Svc.Refund` is also a prefix of `Svc.RefundAll`
+    public void Type_dot_member_resolves_when_a_longer_member_name_starts_the_same()
+    {
+        var p = ImpactProject.Build();
+
+        var text = p.Tool().Render("Svc.Refund", null, 5, "compact");
+
+        StringAssert.Contains(text, "File: Orders/Svc.cs:30");
+    }
+
     [TestMethod] // overloads share a name, so nothing says which one: ask, and say what the choices are
     public void Several_symbols_at_the_top_score_are_ambiguous_and_listed_with_their_locations()
     {
