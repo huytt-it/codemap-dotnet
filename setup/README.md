@@ -1,6 +1,6 @@
 # setup/ — everything you need to fill in, in one place
 
-The files in this directory are the entire "configuration" surface of CodeMap. Clone the repo, complete the four tasks below, and it is ready to use.
+The files in this directory are the entire "configuration" surface of CodeMap. Clone the repo, complete the four tasks below, and it is ready to use. Task 5 is optional: it lets the agent in VS Code call CodeMap directly over MCP instead of going through the terminal.
 
 | File | What to do with it |
 |---|---|
@@ -76,6 +76,8 @@ codemap sync --all
 
 By default, an AI agent **does not run `codemap` itself** — it prints the command, you paste it into a terminal, then paste the output back for it to read. Safe, but slow.
 
+> This file only governs the terminal workflow. With the MCP server (Task 5), the agent calls read-only tools directly and does not read `codemap.permissions.json`.
+
 Open `setup/codemap.permissions.json` and change `"autoRun"` for each subcommand:
 
 ```json
@@ -137,7 +139,11 @@ Commit this file into the target repo — a colleague who clones it has it immed
 
 ### After copying (applies to either option)
 
-The file **contains no hardcoded paths** — it reads `codemap.projects.json` on its own to find the index, and `codemap.permissions.json` to know which commands it may run. Three things worth checking afterward:
+The file **contains no hardcoded paths**. With the MCP server (Task 5), its first section sends the agent straight to the `codemap_*` tools. Without it, the agent reads `codemap.projects.json` on its own to find the index, and `codemap.permissions.json` to know which commands it may run.
+
+**Quit VS Code completely after copying or editing the file.** The agent reads instruction files once, when VS Code starts it; Reload Window and a new chat keep the old text.
+
+Three things worth checking afterward:
 
 - The **"Language"** section is written for a codebase with Japanese commits. If your `commitLanguage` differs, update it to match.
 - Confirm an agent can actually **find** `codemap.projects.json` (following the search order from Task 1) — if you chose Option A (many projects), placing `codemap.projects.json` at `~/.codemap/` is the natural choice, since that's visible from every workspace, matching the spirit of Option A.
@@ -147,10 +153,32 @@ The file **contains no hardcoded paths** — it reads `codemap.projects.json` on
 
 > **Choose only one of the two options** for a given repo, not both. Unlike `codemap.projects.json` (where the closer copy hides the farther one), `.instructions.md` files **stack** — if a repo has both a copy at `~/.copilot/instructions/` and one at `.github/instructions/`, an agent receives both at once, and the duplicated content is sent to the model twice. That costs more; it does not produce a wrong answer.
 
+> **Remove older copies of the instructions.** Instruction files stack, and an outdated copy (for example a `.github/copilot-instructions.md` made from an earlier version of this file) still tells the agent to print terminal commands. In testing, that copy won over the MCP tools until it was removed.
+
+## Task 5 (optional) — Let the agent call CodeMap directly over MCP
+
+In each target repo, create `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "codemap": {
+      "type": "stdio",
+      "command": "codemap",
+      "args": ["mcp", "--workspace", "${workspaceFolder}"]
+    }
+  }
+}
+```
+
+If you installed with Option B (no install), use `"command": "dotnet"` and put the full path of `CodeMap.Cli.dll` first in `args`. The server finds the project by matching the workspace against the `codemap.projects.json` from Task 1, so nothing project-specific goes in this file, and it can be committed for the whole team.
+
+Then quit VS Code completely, reopen the repo, and ask a question in chat. The server starts after the first message. See [Part 3b of the main README](../README.md#part-3b--let-an-agent-call-codemap-directly-mcp) for the tools it serves and what to expect.
+
 ---
 
 ## Prefer not to do this yourself? Have an AI do it
 
-Open [SETUP-PROMPT.md](SETUP-PROMPT.md), copy the prompt block it contains, and paste it into Copilot Chat (Agent mode), Claude Code, or Cursor. It detects your SDK, chooses an install method that matches what your machine's policy allows, asks you for paths, and completes all four tasks above.
+Open [SETUP-PROMPT.md](SETUP-PROMPT.md), copy the prompt block it contains, and paste it into Copilot Chat (Agent mode), Claude Code, or Cursor. It detects your SDK, chooses an install method that matches what your machine's policy allows, asks you for paths, and completes all four tasks above. It does not do Task 5 (MCP) yet.
 
 The prompt deliberately **forbids the agent from running `git clone`** and **forbids editing the PowerShell profile or system PATH** — you keep control over where the source comes from, and nothing runs into corporate machine policy restrictions.
