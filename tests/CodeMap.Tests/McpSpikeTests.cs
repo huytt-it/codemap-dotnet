@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using CodeMap.Mcp;
+using CodeMap.Query.Git;
 using CodeMap.Query.Json;
 using CodeMap.Query.Models;
 using ModelContextProtocol.Client;
@@ -63,6 +65,24 @@ public class McpSpikeTests
         StringAssert.StartsWith(text, "codemap · app · ");
         StringAssert.Contains(text, "(from --workspace)");
         StringAssert.Contains(text, "1 symbol(s)");
+    }
+
+    // git used to inherit the server's stdin, which is the JSON-RPC pipe the transport keeps a read pending on. On
+    // Windows every other operation on that handle queues behind the read, so git hung until the next client message
+    // or GitRepoInfo's 15 s timeout, and the freshness line said git could not be run.
+    [TestMethod]
+    public async Task Git_runs_inside_the_server_without_waiting_on_the_protocol_pipe()
+    {
+        var layout = Layout.Create(git: true);
+        await using var client = await StartAsync(layout.Elsewhere, "--config", layout.Registry, "--workspace", layout.Repo);
+
+        var stopwatch = Stopwatch.StartNew();
+        var result = await client.CallToolAsync("codemap_status", new Dictionary<string, object?>());
+        stopwatch.Stop();
+        var text = string.Concat(result.Content.OfType<TextContentBlock>().Select(c => c.Text));
+
+        StringAssert.StartsWith(text, $"codemap · app · HEAD {layout.Head![..7]} · index fresh");
+        Assert.IsTrue(stopwatch.Elapsed < TimeSpan.FromSeconds(10), $"codemap_status took {stopwatch.Elapsed.TotalSeconds:0.0} s");
     }
 
     [TestMethod] // the marker must live ONLY in the instructions, or a client test could not tell where the model got it
@@ -181,10 +201,10 @@ public class McpSpikeTests
         return string.Concat(result.Content.OfType<TextContentBlock>().Select(c => c.Text));
     }
 
-    /// <summary>A registry with one project ("app") whose repo holds a one-symbol index, plus an unrelated directory to start the server in.</summary>
-    private sealed record Layout(string Registry, string Repo, string Elsewhere)
+    /// <summary>A registry with one project ("app") whose repo holds a one-symbol index, plus an unrelated directory to start the server in. With <paramref name="git"/>, the repo is a git repo and the index records its HEAD.</summary>
+    private sealed record Layout(string Registry, string Repo, string Elsewhere, string? Head)
     {
-        public static Layout Create()
+        public static Layout Create(bool git = false)
         {
             var root = TestPaths.NewTempDir();
             var repo = Path.Combine(root, "repo");
@@ -205,10 +225,20 @@ public class McpSpikeTests
             });
             JsonlWriter.Write(Path.Combine(indexDir, "edges.jsonl"), Array.Empty<EdgeRecord>());
 
+            string? head = null;
+            if (git)
+            {
+                GitFixtureHelper.InitInPlace(repo);
+                GitFixtureHelper.Commit(repo, "initial");
+                head = GitRepoInfo.TryGetHeadCommit(repo);
+                File.WriteAllText(Path.Combine(indexDir, "meta.json"),
+                    $$"""{ "indexedAt": "2026-10-30T00:00:00Z", "gitCommit": "{{head}}", "solutionPath": "App.sln", "projectCount": 1, "symbolCount": 1, "edgeCount": 0 }""");
+            }
+
             var registry = Path.Combine(root, "codemap.projects.json");
             File.WriteAllText(registry, """{ "projects": [ { "name": "app", "solution": "repo/App.sln", "output": "out" } ] }""");
 
-            return new Layout(registry, repo, elsewhere);
+            return new Layout(registry, repo, elsewhere, head);
         }
     }
 }

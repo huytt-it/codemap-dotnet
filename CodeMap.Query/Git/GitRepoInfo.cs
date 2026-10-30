@@ -57,6 +57,10 @@ public static class GitRepoInfo
             var psi = new ProcessStartInfo("git")
             {
                 WorkingDirectory = repoPath,
+                // Never the parent's stdin. In `codemap mcp` that is the JSON-RPC pipe, with the transport's read
+                // pending on it; on Windows every other operation on that handle queues behind the read, so git
+                // started with it hung until the client's next message or the timeout below (15 s per call).
+                RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -68,6 +72,7 @@ public static class GitRepoInfo
 
             using var process = Process.Start(psi);
             if (process == null) return null;
+            process.StandardInput.Close();
 
             var stdoutTask = process.StandardOutput.ReadToEndAsync();
             var stderrTask = process.StandardError.ReadToEndAsync();
