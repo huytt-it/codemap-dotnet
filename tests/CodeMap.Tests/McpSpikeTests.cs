@@ -34,6 +34,37 @@ public class McpSpikeTests
         Assert.AreEqual(false, annotations.OpenWorldHint);
     }
 
+    [TestMethod]
+    public async Task Status_tool_is_declared_read_only_and_carries_the_scope_note()
+    {
+        var layout = Layout.Create();
+        await using var client = await StartAsync(layout.Elsewhere, "--config", layout.Registry);
+
+        var tool = (await client.ListToolsAsync()).Single(t => t.Name == "codemap_status");
+        var annotations = tool.ProtocolTool.Annotations!;
+
+        Assert.AreEqual(true, annotations.ReadOnlyHint);
+        Assert.AreEqual(false, annotations.DestructiveHint);
+        Assert.AreEqual(true, annotations.IdempotentHint);
+        Assert.AreEqual(false, annotations.OpenWorldHint);
+        StringAssert.Contains(tool.Description, "does not cover reflection"); // the banner's scope note moved here
+    }
+
+    [TestMethod] // the real server process, its real arguments, and an unrelated cwd
+    public async Task Status_over_stdio_resolves_the_project_from_the_workspace_argument()
+    {
+        var layout = Layout.Create();
+        await using var client = await StartAsync(layout.Elsewhere, "--config", layout.Registry, "--workspace", layout.Repo);
+
+        var result = await client.CallToolAsync("codemap_status", new Dictionary<string, object?>());
+        var text = string.Concat(result.Content.OfType<TextContentBlock>().Select(c => c.Text));
+
+        Assert.AreNotEqual(true, result.IsError);
+        StringAssert.StartsWith(text, "codemap · app · ");
+        StringAssert.Contains(text, "(from --workspace)");
+        StringAssert.Contains(text, "1 symbol(s)");
+    }
+
     [TestMethod] // the marker must live ONLY in the instructions, or a client test could not tell where the model got it
     public async Task Spike_marker_is_in_the_server_instructions_and_nowhere_in_the_tool_output()
     {

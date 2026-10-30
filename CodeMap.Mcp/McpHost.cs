@@ -26,16 +26,17 @@ public static class McpHost
     public static int Run(string[] rawArgs)
     {
         var args = Args.Parse(rawArgs, options: new[] { "config", "workspace" }, flags: Array.Empty<string>());
-        return RunAsync(new SpikeState(args.GetOrDefault("config"), args.GetOrDefault("workspace"))).GetAwaiter().GetResult();
+        var state = new SpikeState(args.GetOrDefault("config"), args.GetOrDefault("workspace"));
+        return RunAsync(state, ToolContext.ForProcess(state.ConfigPath, state.WorkspaceArg)).GetAwaiter().GetResult();
     }
 
-    private static async Task<int> RunAsync(SpikeState state)
+    private static async Task<int> RunAsync(SpikeState state, ToolContext context)
     {
         var options = new McpServerOptions
         {
             ServerInfo = new Implementation { Name = "codemap", Version = ToolVersion() },
             ServerInstructions = SpikeText.Instructions,
-            ToolCollection = new() { EnvironmentTool.Create(state) },
+            ToolCollection = new() { EnvironmentTool.Create(state), StatusTool.Create(context) },
             PromptCollection = new()
             {
                 McpServerPrompt.Create(() => SpikeText.CheckPrompt, new McpServerPromptCreateOptions
@@ -72,6 +73,9 @@ public static class McpHost
         state.MarkReady();
         Console.Error.WriteLine(
             $"codemap mcp: ready after {state.ReadyAfterMs} ms · pid {Environment.ProcessId} · cwd {Environment.CurrentDirectory}");
+        var workspace = context.Resolver.Workspace;
+        Console.Error.WriteLine($"codemap mcp: workspace {workspace.Path} (from {workspace.SourceLabel})");
+        foreach (var warning in workspace.Warnings) Console.Error.WriteLine($"codemap mcp: warning: {warning}");
 
         await server.RunAsync();
         Console.Error.WriteLine("codemap mcp: client closed the connection, exiting");
