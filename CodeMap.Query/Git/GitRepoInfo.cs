@@ -17,9 +17,9 @@ public static class GitRepoInfo
 
     public static string? TryGetRepoRoot(string repoPath) => RunSingleLine(repoPath, "rev-parse", "--show-toplevel");
 
-    /// <summary>Files that differ between <paramref name="fromCommit"/> and the current working tree HEAD (spec section 7.5). Committed changes only — see <see cref="TryGetUncommittedFiles"/> for the rest. Paths are relative to the repo root.</summary>
-    public static List<string>? TryGetChangedFilesSince(string repoPath, string fromCommit)
-        => ParsePaths(Run(repoPath, "-c", "core.quotepath=false", "diff", "--name-only", fromCommit, "HEAD"));
+    /// <summary>Files that differ between <paramref name="fromCommit"/> and <paramref name="toCommit"/>, the current HEAD unless a commit is named (spec section 7.5). Committed changes only — see <see cref="TryGetUncommittedFiles"/> for the rest. Paths are relative to the repo root.</summary>
+    public static List<string>? TryGetChangedFilesSince(string repoPath, string fromCommit, string toCommit = "HEAD")
+        => ParsePaths(Run(repoPath, "-c", "core.quotepath=false", "diff", "--name-only", fromCommit, toCommit));
 
     /// <summary>
     /// Tracked files whose staged or unstaged content differs from HEAD. A scan describes the tree as of its
@@ -37,10 +37,10 @@ public static class GitRepoInfo
             .Select(l => l.TrimEnd('\r'))
             .ToList();
 
-    /// <summary>How many commits HEAD is ahead of <paramref name="fromCommit"/> (spec section 7.5 staleness banner).</summary>
-    public static int? TryGetCommitCountSince(string repoPath, string fromCommit)
+    /// <summary>How many commits <paramref name="toCommit"/> (HEAD unless named) is ahead of <paramref name="fromCommit"/> (spec section 7.5 staleness banner).</summary>
+    public static int? TryGetCommitCountSince(string repoPath, string fromCommit, string toCommit = "HEAD")
     {
-        var output = Run(repoPath, "rev-list", "--count", $"{fromCommit}..HEAD");
+        var output = Run(repoPath, "rev-list", "--count", $"{fromCommit}..{toCommit}");
         return int.TryParse(output?.Trim(), out var n) ? n : null;
     }
 
@@ -57,6 +57,10 @@ public static class GitRepoInfo
             var psi = new ProcessStartInfo("git")
             {
                 WorkingDirectory = repoPath,
+                // Never the parent's stdin. In `codemap mcp` that is the JSON-RPC pipe, with the transport's read
+                // pending on it; on Windows every other operation on that handle queues behind the read, so git
+                // started with it hung until the client's next message or the timeout below (15 s per call).
+                RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -68,6 +72,7 @@ public static class GitRepoInfo
 
             using var process = Process.Start(psi);
             if (process == null) return null;
+            process.StandardInput.Close();
 
             var stdoutTask = process.StandardOutput.ReadToEndAsync();
             var stderrTask = process.StandardError.ReadToEndAsync();

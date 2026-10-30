@@ -6,6 +6,7 @@ using CodeMap.Query.Git;
 using CodeMap.Query.Impact;
 using CodeMap.Query.Link;
 using CodeMap.Query.Map;
+using CodeMap.Mcp;
 using CodeMap.Query.Where;
 using CodeMap.Roslyn.Scan;
 
@@ -39,6 +40,7 @@ internal static class CliApp
                 "where" => WhereCommand.Run(rest),
                 "impact" => ImpactCommand.Run(rest),
                 "slice" => SliceCommand.Run(rest),
+                "mcp" => McpHost.Run(rest),
                 "-h" or "--help" or "help" => PrintUsageOk(),
                 _ => UnknownCommand(command),
             };
@@ -97,6 +99,9 @@ internal static class CliApp
               codemap slice    <index> --symbol <docId> [--depth 3] [--max-lines 40] [--out <file.md>]
 
             <index> above means either --index <dir> or --project <name> (resolved via codemap.projects.json).
+
+            Serve indexes to an AI agent over MCP (stdio; tools: codemap_status, codemap_impact):
+              codemap mcp      [--config <file>] [--workspace <dir>]
 
             Any command accepts --verbose to print the full stack trace on an unexpected error.
 

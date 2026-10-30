@@ -96,8 +96,12 @@ public static class ImpactEngine
             inferredRouteCount: entryPoints.Count(e => e.RouteInferred), overrideCount: viaOverrideCount, delegateCount: viaDelegateCount);
 
         // Override hops have no DI evidence to confirm or rule them out, so all of them count, as unchecked interface hops do.
-        var riskScore = ComputeRiskScore(
-            confirmedEntryPoints.Count, testsReached.Count, viaInterfaceCount - viaInterfaceUnconfirmedCount + viaOverrideCount);
+        // Callers reached but none an entry point (of any binding) or a test: nothing to weigh, so no score rather
+        // than a 0 that reads as "safe". A symbol with no callers at all is a leaf, and keeps its 0.
+        int? riskScore = entryPoints.Count == 0 && testsReached.Count == 0 && intermediateCallers.Count > 0
+            ? null
+            : ComputeRiskScore(
+                confirmedEntryPoints.Count, testsReached.Count, viaInterfaceCount - viaInterfaceUnconfirmedCount + viaOverrideCount);
 
         return new ImpactResult
         {

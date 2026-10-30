@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- .Core rather than the ModelContextProtocol meta-package: the meta-package adds the Microsoft.Extensions.Hosting
+         integration (AddMcpServer/WithStdioServerTransport), which would make generic host a second new dependency
+         for one stdio loop. .Core has McpServer.Create and the stdio transport, and the client the tests drive it with.
+         2.2.0, not the newest 2.3.0: that one was published days before this was written. -->
+    <PackageReference Include="ModelContextProtocol.Core" Version="2.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Query only, never Roslyn: `codemap mcp` reads an index, so like every other query command it must run on a
+         machine with no Build Tools (spec section 2). -->
+    <ProjectReference Include="..\CodeMap.Query\CodeMap.Query.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CodeMap.Cli" />
+    <InternalsVisibleTo Include="CodeMap.Tests" />
+  </ItemGroup>
+
+</Project>

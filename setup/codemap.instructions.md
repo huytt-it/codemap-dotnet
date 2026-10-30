@@ -1,6 +1,6 @@
 ---
 applyTo: "**"
-description: "CodeMap — cách dùng chỉ số codebase tĩnh (offline) khi trả lời câu hỏi quan hệ code"
+description: "CodeMap — dùng tool MCP codemap_* (hoặc lệnh codemap khi không có tool) cho câu hỏi quan hệ code"
 ---
 
 # Hướng dẫn cho AI agent — CodeMap
@@ -26,9 +26,34 @@ description: "CodeMap — cách dùng chỉ số codebase tĩnh (offline) khi tr
   song song, không giới hạn tên.
 -->
 
-## ⚙️ Đường dẫn index — đọc từ `codemap.projects.json`, đừng đoán
+## 🔌 Có tool MCP `codemap_*` thì dùng tool — đọc mục này trước
 
-**Việc đầu tiên mỗi session, trước khi in bất kỳ lệnh nào:** mở file `codemap.projects.json`
+Workspace có thể có server MCP `codemap` (cấu hình trong `.vscode/mcp.json`), với tool
+`codemap_impact` và `codemap_status`. Tool có thể chưa nằm sẵn trong danh sách của bạn: **tìm bằng
+tool search với từ khoá "codemap"** trước khi kết luận là không có.
+
+Có tool thì:
+
+- "Đổi X thì ảnh hưởng tới đâu", "ai gọi X", "endpoint/màn hình/test nào dùng X" → **gọi
+  `codemap_impact`** với `symbol` là `Type.Member` (ví dụ `BasketViewModelService.GetOrCreateBasketForUser`)
+  hoặc docId. Không grep thay, không in lệnh cho tôi chạy.
+- Tool báo `NOT_INDEXED`, `INDEX_MISSING`, hoặc tôi hỏi CodeMap đã cài đúng chưa → **gọi
+  `codemap_status`**. Báo `AMBIGUOUS_PROJECT` / `AMBIGUOUS_SYMBOL` → gọi lại với `project` hoặc docId
+  mà thông báo liệt kê.
+- **Không** đọc `codemap.projects.json`, **không** tìm `codemap.permissions.json`, **không** chạy
+  `codemap` trong terminal: server tự biết project, index và repo.
+- Dòng đầu kết quả là độ tươi của index so với HEAD. Index lệch ở file liên quan thì nói rõ trong
+  câu trả lời.
+- Đọc kết quả theo mục "Cách đọc kết quả" bên dưới. Muốn xem caller trung gian thì gọi lại với
+  `detail=full`.
+- Text search vẫn đúng cho comment, string literal, giá trị config.
+
+**Chỉ khi không có tool `codemap_*`** (đã tìm mà không thấy) mới làm theo quy trình CLI từ đây trở
+xuống.
+
+## ⚙️ Đường dẫn index — đọc từ `codemap.projects.json`, đừng đoán (quy trình CLI)
+
+**Khi không có tool MCP, việc đầu tiên mỗi session, trước khi in bất kỳ lệnh nào:** mở file `codemap.projects.json`
 (tìm ở gốc repo, các thư mục cha, hoặc `~/.codemap/`). File đó khai báo mọi codebase đã index:
 
 **Tìm file này bằng terminal thật (`cat`, `ls`, hoặc chạy thẳng `codemap projects`), KHÔNG dùng
@@ -91,7 +116,7 @@ và message commit/ticket thì theo `commitLanguage` của project trong `codema
 (ví dụ dưới đây viết cho `"ja"` — tiếng Nhật).** Sự lệch ngôn ngữ này quyết định lệnh nào dùng
 được cho câu hỏi nào — xem mục "Ngôn ngữ" bên dưới, đọc trước khi gõ lệnh đầu tiên.
 
-## 🔑 Bạn CÓ THỂ tự chạy một số lệnh `codemap` — đọc `codemap.permissions.json`
+## 🔑 Bạn CÓ THỂ tự chạy một số lệnh `codemap` — đọc `codemap.permissions.json` (quy trình CLI)
 
 Cùng chỗ với `codemap.projects.json` (tìm ở gốc repo, các thư mục cha, hoặc `~/.codemap/`) có
 thể có file `codemap.permissions.json`, khai báo lệnh con nào bạn được tự chạy
@@ -113,7 +138,7 @@ kết quả.
 phải của bạn — kể cả khi bạn thấy tiện hơn.
 
 **Quan trọng nhất trong toàn bộ file này:** khi câu hỏi cần dữ liệu quan hệ (impact, caller, entry
-point...), **luôn mở terminal và chạy lệnh `codemap` thật** — dù `autoRun` cho phép bạn tự chạy
+point...), **gọi tool MCP `codemap_*` nếu có; không có thì luôn mở terminal và chạy lệnh `codemap` thật** — dù `autoRun` cho phép bạn tự chạy
 hay phải in lệnh chờ tôi. **Không được** tự ý dùng công cụ tìm kiếm/đọc file có sẵn của bạn để
 thay thế, kể cả khi việc đó có vẻ nhanh hơn hoặc không cần xin phép. Danh sách "Cấm" ở cuối file
 nói rõ vì sao (grep mù ra kết quả sai lệch, chậm hơn, và bỏ lỡ cạnh suy diễn `codemap` đã tính
@@ -123,7 +148,8 @@ sẵn).
 
 1. Tôi hỏi một câu về codebase.
 2. Nếu câu hỏi cần dữ liệu quan hệ (ai gọi ai, sửa chỗ này ảnh hưởng đâu, chức năng này nằm
-   đâu) → xem lệnh cần dùng có `autoRun: true` không (mục permission ở trên).
+   đâu) → có tool MCP `codemap_*` thì gọi tool (mục đầu file). Không có tool thì xem lệnh cần dùng
+   có `autoRun: true` không (mục permission ở trên).
    - Có → **mở terminal, tự chạy lệnh `codemap` thật**, đọc output.
    - Không → in ra **đúng một lệnh** cho tôi chạy, rồi **dừng lại**.
    Cả hai trường hợp: không đoán trước kết quả, không tự search/grep thay thế.
@@ -241,8 +267,9 @@ Action không có attribute route vẫn được tính, nhưng route của nó l
 thật của app có thể khác; khi trả lời, nói rõ route đó là suy diễn.
 
 Nếu report ghi 0 entry point nhưng fan-in lớn hơn 0, kết luận đúng là *"tool không phân loại
-được"*, không phải *"không có gì bị ảnh hưởng"*. Lúc đó đề nghị tôi chạy lại với `--full` để
-xem caller trung gian. Fan-in là số **method khác nhau** gọi hoặc khởi tạo trực tiếp symbol
+được"*, không phải *"không có gì bị ảnh hưởng"*. Lúc đó gọi lại tool với `detail=full` (quy trình
+CLI: đề nghị tôi chạy lại với `--full`) để xem caller trung gian. Điểm risk ghi `not scored — N
+unclassified caller(s)` cũng có nghĩa đó: chưa đo được, không phải rủi ro thấp. Fan-in là số **method khác nhau** gọi hoặc khởi tạo trực tiếp symbol
 này, không phải số chỗ gọi.
 
 ### Cạnh suy diễn có thể thừa
@@ -294,7 +321,8 @@ kết quả:
 
 ### Banner staleness ở đầu mỗi file
 
-Mỗi report ghi index quét lúc nào và lệch bao nhiêu commit so với HEAD. Nếu lệch nhiều và có
+Mỗi report ghi index quét lúc nào và lệch bao nhiêu commit so với HEAD (với tool MCP: một dòng
+đầu kết quả, dạng `codemap · <project> · HEAD <sha> · index fresh`). Nếu lệch nhiều và có
 file liên quan đã đổi sau khi quét, nói cho tôi biết trước khi kết luận. Banner cũng đếm cả file
 đang sửa dở chưa commit (`have uncommitted changes`, hoặc `(N uncommitted)`): index không biết về
 những thay đổi đó, kể cả khi HEAD trùng với lúc quét.
@@ -311,7 +339,7 @@ lặng coi như repo không có lịch sử.
 
 ## Cấm
 
-- **Không tự ý dùng công cụ search/read-file có sẵn của bạn thay cho lệnh `codemap`** khi câu
+- **Không tự ý dùng công cụ search/read-file có sẵn của bạn thay cho tool MCP `codemap_*` hoặc lệnh `codemap`** khi câu
   hỏi cần dữ liệu quan hệ, kể cả khi bạn đã đọc `codemap.projects.json` và biết index tồn tại.
   Biết index tồn tại mà không dùng nó thì cũng vô nghĩa như không có index.
 - Không grep mù **cho câu hỏi quan hệ**. Grep `Save` trong monolith trả về hàng nghìn kết quả
