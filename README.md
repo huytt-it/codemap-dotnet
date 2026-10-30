@@ -1,10 +1,10 @@
 # CodeMap
 
-A CLI tool that scans a .NET codebase and produces static files (`.md`, `.jsonl`) to attach to an AI chat (GitHub Copilot), answering the question: *"what does changing this affect?"*
+A CLI tool that scans a .NET codebase into a static index and answers, for you or for an AI agent (GitHub Copilot), the question: *"what does changing this affect?"*
 
 - Runs **fully offline** — no network calls, no code ever leaves your machine.
 - **Read-only** — it never modifies files in the solution it scans.
-- Not an MCP server — you run commands in a terminal, then attach the output files to a chat yourself.
+- Two ways to use it: run commands in a terminal and attach the output files to a chat yourself, or let the agent call CodeMap directly through **`codemap mcp`**, an MCP server (see [Part 3b](#part-3b--let-an-agent-call-codemap-directly-mcp)).
 
 ---
 
@@ -304,6 +304,50 @@ codemap slice --index D:\CodeMapIndex\MyApp\index --symbol "M:Orders.OrderServic
 
 ---
 
+## Part 3b — Let an agent call CodeMap directly (MCP)
+
+`codemap mcp` is a read-only [MCP](https://modelcontextprotocol.io) server over stdio. With it, the agent in VS Code asks CodeMap itself instead of printing commands for you to run. It serves two tools today:
+
+| Tool | Answers |
+|---|---|
+| `codemap_impact` | What changing a method, class or property affects: entry points, screens, tests, risk, tickets, co-changed files, blind spots. Same report as `codemap impact` |
+| `codemap_status` | Whether CodeMap covers the open workspace, how fresh its index is, and the `codemap sync` command when it needs rebuilding |
+
+**Before you start:** declare the project and scan it (Part 2). The server only reads indexes; it never scans. If you installed with Option A before the MCP server existed, update the tool (Part 1) so `codemap mcp` is there.
+
+**1. Add the server to the target repo** in `.vscode/mcp.json` (commit it if the whole team uses CodeMap):
+
+```json
+{
+  "servers": {
+    "codemap": {
+      "type": "stdio",
+      "command": "codemap",
+      "args": ["mcp", "--workspace", "${workspaceFolder}"]
+    }
+  }
+}
+```
+
+With Option B (no install), use `"command": "dotnet"` and put the full path of `CodeMap.Cli.dll` first in `args`.
+
+**2. Install the agent instructions** ([For AI agents to read](#for-ai-agents-to-read-github-copilot-claude-)). Their first section tells the agent to look for the `codemap_*` tools and use them. Without it, an agent that was set up for the terminal workflow kept printing commands even though the tools were available.
+
+**3. Quit VS Code completely and reopen it**, then ask normally, for example *"what does changing `OrderService.Cancel` affect?"*
+
+How the server finds the project: the tool's `project` parameter if the agent passes one, otherwise the `--workspace` folder, otherwise the folder VS Code started it in. It matches that folder against `codemap.projects.json`, found via `--config`, then the workspace and its parent folders, then `~/.codemap/`. If nothing matches, the tools answer `NOT_INDEXED` and list the projects they know; `codemap_status` explains what it tried.
+
+Things to know (observed with VS Code 1.142 and its Copilot CLI agent):
+
+- **The server starts after the first chat message.** Pressing Start in the editor before that reports an error.
+- **The agent finds MCP tools through tool search.** It sees a tool's description only after searching for it, which is why the instructions file matters.
+- **Read-only tools run without an approval prompt.**
+- **The agent reads instruction files once, when VS Code starts it.** After you change them, quit VS Code completely. Reload Window and a new chat both keep the old text.
+- **The first line of every result is the index's freshness**, for example `codemap · Shop · HEAD 4da8212 · index fresh`. The server reloads the index by itself when `codemap sync` finishes; no restart needed.
+- **A running server locks the files it runs from.** If you point `mcp.json` at a build inside your CodeMap clone (Option B), rebuilding that configuration fails until VS Code is closed. With the installed tool (Option A), rebuilding the clone is fine, but `dotnet tool update` needs VS Code closed.
+
+---
+
 ## Part 4 — Refreshing the index
 
 The tool does **not** update itself. As code changes, the index gets stale.
@@ -395,11 +439,11 @@ Create this at the **root of the repo being scanned**, if needed. Without it, th
 
 ## For AI agents to read (GitHub Copilot, Claude, ...)
 
-[setup/codemap.instructions.md](setup/codemap.instructions.md) is the full instruction set for an AI agent: the question-and-answer workflow, how to read a report, which language to use for `where`, and what is off-limits. It contains no hardcoded paths — it reads `codemap.projects.json` itself to find the index.
+[setup/codemap.instructions.md](setup/codemap.instructions.md) is the full instruction set for an AI agent: the question-and-answer workflow, how to read a report, which language to use for `where`, and what is off-limits. It contains no hardcoded paths. Its first section sends the agent to the `codemap_*` MCP tools when they exist ([Part 3b](#part-3b--let-an-agent-call-codemap-directly-mcp)); otherwise it follows the terminal workflow, reading `codemap.projects.json` itself to find the index.
 
 Place this file at **`~/.copilot/instructions/`** (applies to every project on your machine — the better choice if you scan multiple repos and add or remove them over time) or at **`<target-repo>/.github/instructions/`** (per-repo, shareable via git). Both are read automatically by VS Code, no setting changes needed. See "Task 4" in [setup/README.md](setup/README.md) for details on choosing between them.
 
-By default, an agent **does not run `codemap` itself** — it prints the command and you run it. To let an agent run the read-only commands (`find`/`where`/`impact`/`slice`) on its own, configure [setup/codemap.permissions.json](setup/codemap.permissions.json) — see "Task 3" in [setup/README.md](setup/README.md).
+In the terminal workflow, an agent **does not run `codemap` itself** by default — it prints the command and you run it. To let an agent run the read-only commands (`find`/`where`/`impact`/`slice`) on its own, configure [setup/codemap.permissions.json](setup/codemap.permissions.json) — see "Task 3" in [setup/README.md](setup/README.md). With the MCP server, the agent calls the tools directly and `codemap.permissions.json` is not used.
 
 ## Further documentation
 
