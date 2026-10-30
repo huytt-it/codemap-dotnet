@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text;
 using CodeMap.Query.Git;
 using CodeMap.Query.Impact;
@@ -39,13 +38,8 @@ public static class StalenessBanner
         return sb.ToString();
     }
 
-    /// <summary>
-    /// How the repo now differs from the scan, as far as git can tell. Parameters as for <see cref="Render"/>;
-    /// <paramref name="cache"/> lets a long-lived caller reuse the committed half of the answer (see
-    /// <see cref="CommittedChangesCache"/>). The uncommitted half is asked of git on every call.
-    /// </summary>
-    public static Staleness Compute(
-        MetaModel? meta, IReadOnlyCollection<string>? relevantFiles = null, string? repo = null, CommittedChangesCache? cache = null)
+    /// <summary>How the repo now differs from the scan, as far as git can tell. Parameters as for <see cref="Render"/>.</summary>
+    public static Staleness Compute(MetaModel? meta, IReadOnlyCollection<string>? relevantFiles = null, string? repo = null)
     {
         var relevantOnly = relevantFiles is { Count: > 0 };
         if (meta == null) return Unknown(StalenessState.NoMeta);
@@ -72,14 +66,15 @@ public static class StalenessBanner
         if (string.Equals(currentHead, meta.GitCommit, StringComparison.OrdinalIgnoreCase))
             return new Staleness(StalenessState.AtScannedCommit, meta.GitCommit, currentHead, 0, dirty, dirty, relevantOnly, repo);
 
-        var changes = cache?.Get(cwd, meta.GitCommit, currentHead) ?? CommittedChangesCache.Ask(cwd, meta.GitCommit, currentHead);
-        var committed = InIndexSpace(changes.Files);
+        // Both ends are named by hash, so the answer belongs to that exact pair even if HEAD moves meanwhile.
+        var commitCount = GitRepoInfo.TryGetCommitCountSince(cwd, meta.GitCommit, currentHead);
+        var committed = InIndexSpace(GitRepoInfo.TryGetChangedFilesSince(cwd, meta.GitCommit, currentHead));
 
         // A file can be both committed-over and dirty; Union counts it once.
         int? changed = committed == null
             ? null
             : CountIn(uncommitted == null ? committed : committed.Union(uncommitted, FilePathComparison.Comparer));
-        return new Staleness(StalenessState.Behind, meta.GitCommit, currentHead, changes.CommitCount, changed, dirty, relevantOnly, repo);
+        return new Staleness(StalenessState.Behind, meta.GitCommit, currentHead, commitCount, changed, dirty, relevantOnly, repo);
 
         Staleness Unknown(StalenessState state) => new(state, meta?.GitCommit, null, null, null, null, relevantOnly, repo);
     }
@@ -186,37 +181,3 @@ public sealed record Staleness(
     /// <summary>HEAD is the scanned commit and no file in scope has uncommitted changes.</summary>
     public bool IsFresh => State == StalenessState.AtScannedCommit && UncommittedFiles == 0;
 }
-
-/// <summary>
-/// The committed half of a staleness check (commit count and changed files from the scanned commit to HEAD) for a
-/// caller that asks over and over, like the MCP server on every tool call. Both ends are commit hashes, so the answer
-/// for one pair never changes and is kept; the uncommitted half changes with every save and is never kept here. A
-/// git call that failed is not remembered. Thread-safe.
-/// </summary>
-public sealed class CommittedChangesCache
-{
-    /// <summary>HEAD moves a few times a day; this only bounds a server left running for weeks.</summary>
-    private const int MaxEntries = 64;
-
-    private readonly ConcurrentDictionary<string, CommittedChanges> _entries = new(FilePathComparison.Comparer);
-
-    public int Count => _entries.Count;
-
-    internal CommittedChanges Get(string repo, string scannedCommit, string head)
-    {
-        var key = $"{Path.GetFullPath(repo)}|{scannedCommit}|{head}";
-        if (_entries.TryGetValue(key, out var known)) return known;
-
-        var asked = Ask(repo, scannedCommit, head);
-        if (asked.CommitCount == null || asked.Files == null) return asked;
-
-        if (_entries.Count >= MaxEntries) _entries.Clear();
-        return _entries[key] = asked;
-    }
-
-    /// <summary>Names HEAD by the hash already read, so the answer belongs to that exact pair even if HEAD moves meanwhile.</summary>
-    internal static CommittedChanges Ask(string repo, string scannedCommit, string head)
-        => new(GitRepoInfo.TryGetCommitCountSince(repo, scannedCommit, head), GitRepoInfo.TryGetChangedFilesSince(repo, scannedCommit, head));
-}
-
-internal sealed record CommittedChanges(int? CommitCount, List<string>? Files);

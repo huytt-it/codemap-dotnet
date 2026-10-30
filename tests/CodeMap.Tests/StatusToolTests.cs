@@ -197,7 +197,6 @@ public class StatusToolTests
         public StatusTool Tool(string? workspace = null, string? cwd = null, string? config = null, IndexCache? indexes = null)
             => new(new ToolContext(
                 new ProjectResolver(config, workspace, cwd ?? Path.Combine(Root, "home"), Path.Combine(Root, "home")),
-                indexes ?? new IndexCache(),
-                new CommittedChangesCache()));
+                indexes ?? new IndexCache()));
     }
 }

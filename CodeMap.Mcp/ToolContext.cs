@@ -3,18 +3,17 @@ using ModelContextProtocol;
 
 namespace CodeMap.Mcp;
 
-/// <summary>What every tool shares for the life of the server: one project resolver, one index cache, one git cache.</summary>
-internal sealed record ToolContext(ProjectResolver Resolver, IndexCache Indexes, CommittedChangesCache GitChanges)
+/// <summary>What every tool shares for the life of the server: one project resolver and one index cache.</summary>
+internal sealed record ToolContext(ProjectResolver Resolver, IndexCache Indexes)
 {
     /// <summary>The real inputs: the server's own arguments, working directory and user profile.</summary>
     public static ToolContext ForProcess(string? configArg, string? workspaceArg) => new(
         new ProjectResolver(
             configArg, workspaceArg, Environment.CurrentDirectory, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)),
-        new IndexCache(),
-        new CommittedChangesCache());
+        new IndexCache());
 
     public Staleness Staleness(ResolvedProject project, CachedIndex index, IReadOnlyCollection<string>? relevantFiles = null)
-        => StalenessBanner.Compute(index.Index.Meta, relevantFiles, project.RepoRoot, GitChanges);
+        => StalenessBanner.Compute(index.Index.Meta, relevantFiles, project.RepoRoot);
 
     /// <summary>The line every tool result opens with. When the cache is serving an older copy, why goes on the same line, so it cannot be missed.</summary>
     public static string FreshnessLine(ResolvedProject project, CachedIndex index, Staleness staleness)

@@ -203,7 +203,6 @@ public class ImpactToolTests
         public ImpactTool Tool()
             => new(new ToolContext(
                 new ProjectResolver(null, Repo, Path.Combine(Root, "home"), Path.Combine(Root, "home")),
-                new IndexCache(),
-                new CommittedChangesCache()));
+                new IndexCache()));
     }
 }

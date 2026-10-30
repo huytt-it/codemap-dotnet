@@ -5,9 +5,8 @@ namespace CodeMap.Tests;
 
 /// <summary>
 /// MCP M1: the staleness banner's facts as data (<see cref="StalenessBanner.Compute"/>), rendered as the one line
-/// that opens every MCP tool result. The markdown banner keeps its exact wording (StalenessBannerTests). The
-/// committed part of the comparison only changes when HEAD does, so a long-lived server may reuse it; the
-/// uncommitted part changes with every save and must be asked of git each time.
+/// that opens every MCP tool result. The markdown banner keeps its exact wording (StalenessBannerTests). Git is
+/// asked on every call, so an edit the agent just made shows at once.
 /// </summary>
 [TestClass]
 public class FreshnessLineTests
@@ -85,46 +84,6 @@ public class FreshnessLineTests
         StringAssert.Contains(
             StalenessBanner.RenderLine("shop", StalenessBanner.Compute(MetaAt("0123456789abcdef"), repo: notARepo)),
             $"staleness unknown (could not run git in {notARepo})");
-    }
-
-    [TestMethod]
-    public void Committed_changes_are_cached_per_scanned_commit_and_head()
-    {
-        var repo = GitFixtureHelper.NewRepo();
-        GitFixtureHelper.Commit(repo, "initial", ("a.cs", "class A {}"));
-        var scannedAt = Head(repo);
-        GitFixtureHelper.Commit(repo, "second", ("b.cs", "class B {}"));
-        var cache = new CommittedChangesCache();
-
-        StalenessBanner.Compute(MetaAt(scannedAt), repo: repo, cache: cache);
-        StalenessBanner.Compute(MetaAt(scannedAt), repo: repo, cache: cache);
-        Assert.AreEqual(1, cache.Count);
-
-        GitFixtureHelper.Commit(repo, "third", ("c.cs", "class C {}"));
-        var after = StalenessBanner.Compute(MetaAt(scannedAt), repo: repo, cache: cache);
-
-        Assert.AreEqual(2, cache.Count);
-        Assert.AreEqual(2, after.CommitsBehind);
-        Assert.AreEqual(2, after.ChangedFiles);
-    }
-
-    [TestMethod] // caching the whole answer would keep saying "fresh" after the agent's own edit
-    public void Uncommitted_changes_are_never_served_from_the_cache()
-    {
-        var repo = GitFixtureHelper.NewRepo();
-        GitFixtureHelper.Commit(repo, "initial", ("a.cs", "class A {}"), ("b.cs", "class B {}"));
-        var scannedAt = Head(repo);
-        GitFixtureHelper.Commit(repo, "second", ("b.cs", "class B2 {}"));
-        var cache = new CommittedChangesCache();
-
-        var before = StalenessBanner.Compute(MetaAt(scannedAt), new[] { "a.cs", "b.cs" }, repo, cache);
-        File.WriteAllText(Path.Combine(repo, "a.cs"), "class A2 {}");
-        var after = StalenessBanner.Compute(MetaAt(scannedAt), new[] { "a.cs", "b.cs" }, repo, cache);
-
-        Assert.AreEqual(0, before.UncommittedFiles);
-        Assert.AreEqual(1, after.UncommittedFiles);
-        Assert.AreEqual(2, after.ChangedFiles);
-        Assert.AreEqual(1, cache.Count);
     }
 
     private static MetaModel MetaAt(string commit) => new()
