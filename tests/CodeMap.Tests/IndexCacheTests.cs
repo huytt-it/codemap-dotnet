@@ -182,12 +182,11 @@ public class IndexCacheTests
     }
 
     [TestMethod]
-    public void Failed_reload_keeps_the_previous_index_and_is_not_retried_until_the_index_changes()
+    public void Failed_reload_keeps_the_previous_index_until_the_index_is_fixed()
     {
         var output = TestPaths.NewTempDir();
         Publish(output, "2026-10-01T00:00:00Z", syncId: "a1", "Cancel");
-        var loader = new CountingLoader();
-        var cache = new IndexCache(swapRetryDelays: NoDelays, load: loader.Load, sleep: _ => { });
+        var cache = new IndexCache(swapRetryDelays: NoDelays, sleep: _ => { });
         var good = cache.Get("shop", IndexDir(output));
 
         // entrypoints.json is parsed whole, so a broken one fails the real ImpactIndex.Load.
@@ -195,12 +194,9 @@ public class IndexCacheTests
         File.WriteAllText(Path.Combine(broken, "entrypoints.json"), "[ { \"id\": ");
         Swap(output, broken);
         var afterFailure = cache.Get("shop", IndexDir(output));
-        var again = cache.Get("shop", IndexDir(output));
 
         Assert.AreSame(good.Index, afterFailure.Index);
         StringAssert.Contains(afterFailure.Problem, "could not load");
-        Assert.AreEqual(2, loader.Calls, "the broken index must not be re-parsed on every call");
-        Assert.AreSame(good.Index, again.Index);
 
         Publish(output, "2026-10-03T00:00:00Z", syncId: "c3", "Cancel", "Refund");
         var fixedUp = cache.Get("shop", IndexDir(output));
@@ -221,27 +217,6 @@ public class IndexCacheTests
 
         Assert.AreEqual(CodeMapToolException.IndexUnreadable, ex.Code);
         StringAssert.Contains(ex.Message, "codemap sync --project shop");
-    }
-
-    [TestMethod]
-    public void Least_recently_used_project_is_evicted_beyond_capacity()
-    {
-        var root = TestPaths.NewTempDir();
-        foreach (var name in new[] { "a", "b", "c" })
-            Publish(Path.Combine(root, name), "2026-10-01T00:00:00Z", syncId: name, "Cancel");
-        var loader = new CountingLoader();
-        var cache = new IndexCache(capacity: 2, load: loader.Load, sleep: _ => { });
-
-        cache.Get("a", IndexDir(Path.Combine(root, "a")));
-        cache.Get("b", IndexDir(Path.Combine(root, "b")));
-        cache.Get("a", IndexDir(Path.Combine(root, "a")));
-        cache.Get("c", IndexDir(Path.Combine(root, "c"))); // evicts b, the one used longest ago
-        Assert.AreEqual(3, loader.Calls);
-
-        cache.Get("a", IndexDir(Path.Combine(root, "a")));
-        Assert.AreEqual(3, loader.Calls);
-        cache.Get("b", IndexDir(Path.Combine(root, "b")));
-        Assert.AreEqual(4, loader.Calls);
     }
 
     [TestMethod] // the registry was edited to point the project's output somewhere else

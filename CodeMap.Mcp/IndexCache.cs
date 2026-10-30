@@ -38,37 +38,29 @@ internal sealed record CachedIndex(
 /// as zero rows), so without that check a call landing mid-swap would get an empty index and report "no callers".
 ///
 /// The previous copy is replaced only by a complete, successful load. When a load fails, or the index has gone,
-/// the previous copy is served with <see cref="CachedIndex.Problem"/> set, and a broken index is not parsed again
-/// until it changes. Holds at most <c>capacity</c> projects, dropping the least recently used.
+/// the previous copy is served with <see cref="CachedIndex.Problem"/> set.
 ///
 /// Synchronous and thread-safe: tools call it inside Task.Run; two calls for one project load it once.
 /// </summary>
 internal sealed class IndexCache
 {
-    public const int DefaultCapacity = 4;
-
     /// <summary>sync's two renames take milliseconds; together these wait up to ~0.4 s before giving up.</summary>
     public static readonly IReadOnlyList<TimeSpan> DefaultSwapRetryDelays =
         new[] { 25, 50, 100, 200 }.Select(ms => TimeSpan.FromMilliseconds(ms)).ToArray();
 
     private const string SymbolsFile = "symbols.jsonl";
 
-    private readonly int _capacity;
     private readonly IReadOnlyList<TimeSpan> _retryDelays;
     private readonly Func<string, ImpactIndex> _load;
     private readonly Action<TimeSpan> _sleep;
     private readonly object _gate = new();
     private readonly Dictionary<string, Slot> _slots = new(StringComparer.OrdinalIgnoreCase); // registry names are case-insensitive
-    private long _clock;
 
     /// <param name="load">Tests substitute this to count loads or to make one overlap a swap.</param>
     /// <param name="sleep">Tests substitute this to act during the wait between attempts.</param>
     public IndexCache(
-        int capacity = DefaultCapacity, IReadOnlyList<TimeSpan>? swapRetryDelays = null,
-        Func<string, ImpactIndex>? load = null, Action<TimeSpan>? sleep = null)
+        IReadOnlyList<TimeSpan>? swapRetryDelays = null, Func<string, ImpactIndex>? load = null, Action<TimeSpan>? sleep = null)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(capacity, 1);
-        _capacity = capacity;
         _retryDelays = swapRetryDelays ?? DefaultSwapRetryDelays;
         _load = load ?? ImpactIndex.Load;
         _sleep = sleep ?? Thread.Sleep;
@@ -91,13 +83,7 @@ internal sealed class IndexCache
         lock (_gate)
         {
             if (!_slots.TryGetValue(project, out var slot))
-            {
                 _slots[project] = slot = new Slot();
-                if (_slots.Count > _capacity)
-                    _slots.Remove(_slots.Where(kv => kv.Value != slot).MinBy(kv => kv.Value.LastUsed).Key);
-            }
-
-            slot.LastUsed = ++_clock;
             return slot;
         }
     }
@@ -132,8 +118,6 @@ internal sealed class IndexCache
 
             if (current != null && before.Fingerprint == current.Fingerprint)
                 return current;
-            if (slot.FailedFingerprint == before.Fingerprint)
-                return Failed(slot.FailedReason!);
 
             ImpactIndex index;
             try
@@ -153,9 +137,7 @@ internal sealed class IndexCache
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // The content itself is broken: parsing it again on every call would fail the same way.
-                slot.FailedFingerprint = before.Fingerprint;
-                slot.FailedReason = ex.Message;
+                // The content itself is broken: waiting and loading again would fail the same way.
                 return Failed(ex.Message);
             }
 
@@ -171,8 +153,6 @@ internal sealed class IndexCache
                 return Failed("the index kept changing while it was being loaded");
             }
 
-            slot.FailedFingerprint = null;
-            slot.FailedReason = null;
             return slot.Loaded = new CachedIndex(
                 project, indexDir, index, before.Origin, before.Marker, before.Fingerprint, DateTime.UtcNow, Problem: null);
         }
@@ -224,12 +204,6 @@ internal sealed class IndexCache
     private sealed class Slot
     {
         public object Gate { get; } = new();
-        public long LastUsed { get; set; }
         public CachedIndex? Loaded { get; set; }
-
-        /// <summary>The index version whose content failed to parse, so it is not parsed again on every call.</summary>
-        public string? FailedFingerprint { get; set; }
-
-        public string? FailedReason { get; set; }
     }
 }
