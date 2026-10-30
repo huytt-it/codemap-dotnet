@@ -11,7 +11,7 @@ namespace CodeMap.Tests;
 /// MCP M1, <c>codemap_impact</c>: `codemap impact`'s report behind a tool call. The report itself is
 /// CompactRenderer's and is tested there; what is tested here is what the tool adds: a one-line freshness in place of
 /// the markdown banner, parameter-style hints, and a symbol lookup that asks only when it has to. That the report
-/// really is the CLI's, byte for byte, is the protocol test in McpSpikeTests.
+/// really is the CLI's, byte for byte, is the protocol test in McpProtocolTests.
 /// </summary>
 [TestClass]
 public class ImpactToolTests

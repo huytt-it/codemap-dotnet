@@ -100,7 +100,7 @@ internal static class CliApp
 
             <index> above means either --index <dir> or --project <name> (resolved via codemap.projects.json).
 
-            Serve indexes to an AI agent over MCP (stdio; spike build, diagnostic tool only):
+            Serve indexes to an AI agent over MCP (stdio; tools: codemap_status, codemap_impact):
               codemap mcp      [--config <file>] [--workspace <dir>]
 
             Any command accepts --verbose to print the full stack trace on an unexpected error.

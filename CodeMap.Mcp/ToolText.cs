@@ -8,6 +8,12 @@ namespace CodeMap.Mcp;
 /// </summary>
 internal static class ToolText
 {
+    /// <summary>Secondary text: clients may not pass it to the model, so the two tool descriptions say the same where it counts.</summary>
+    public const string Instructions =
+        "CodeMap answers questions about the relationships in C# code from a prebuilt index. To find what a change " +
+        "would affect (callers, endpoints, screens, tests), call codemap_impact instead of searching text; call " +
+        "codemap_status when a CodeMap tool says the project is not indexed, or to see how fresh the index is.";
+
     public const string Status =
         "Reports whether CodeMap covers the current workspace and how far its index can be trusted right now: which " +
         "indexed project the workspace maps to, how far the index is behind git HEAD, what it contains, and the exact " +
