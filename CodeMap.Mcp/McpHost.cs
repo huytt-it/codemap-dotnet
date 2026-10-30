@@ -36,7 +36,7 @@ public static class McpHost
         {
             ServerInfo = new Implementation { Name = "codemap", Version = ToolVersion() },
             ServerInstructions = SpikeText.Instructions,
-            ToolCollection = new() { EnvironmentTool.Create(state), StatusTool.Create(context) },
+            ToolCollection = new() { EnvironmentTool.Create(state), StatusTool.Create(context), ImpactTool.Create(context) },
             PromptCollection = new()
             {
                 McpServerPrompt.Create(() => SpikeText.CheckPrompt, new McpServerPromptCreateOptions
