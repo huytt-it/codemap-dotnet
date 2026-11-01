@@ -200,6 +200,23 @@ public class SyncCommandTests
         StringAssert.Contains(step.Detail, "ticket");
     }
 
+    [TestMethod] // src/App.sln with no `repo` key: RepoOf says <repo>/src, which has no .git, so scan-git used to be skipped without a word
+    public void Scan_git_runs_from_the_git_root_when_the_solution_is_nested_and_repo_is_not_set()
+    {
+        var repo = GitFixtureHelper.NewRepo();
+        GitFixtureHelper.Commit(repo, "fix #1000 initial", ("src/App.sln", ""));
+        var project = NewProject(solution: Path.Combine(repo, "src", "App.sln"), omitRepo: true);
+        string? scanGitRepo = null;
+        var steps = Fake() with { ScanGit = a => { scanGitRepo = a[Array.IndexOf(a, "--repo") + 1]; return FakeScanGit(a); } };
+
+        var result = Sync(project, steps);
+
+        Assert.IsTrue(result.Ok, result.Stderr);
+        var step = SyncMarker.TryRead(project.IndexDir, out _)!.Steps.Single(s => s.Name == "scan-git");
+        Assert.AreEqual(SyncStepResult.Ok, step.Status, $"scan-git: {step.Detail}");
+        Assert.AreEqual(Path.GetFullPath(repo), scanGitRepo, ignoreCase: OperatingSystem.IsWindows());
+    }
+
     [TestMethod]
     public void Frontend_steps_are_recorded_ok_when_they_run()
     {
@@ -397,7 +414,9 @@ public class SyncCommandTests
         }
     }
 
-    private static TestProject NewProject(bool withFrontend = false, bool gitRepo = false, string? repoDir = null, string? solution = null)
+    /// <param name="omitRepo">Leave `repo` out of the entry, so sync has to work the repository out from the solution.</param>
+    private static TestProject NewProject(
+        bool withFrontend = false, bool gitRepo = false, string? repoDir = null, string? solution = null, bool omitRepo = false)
     {
         var root = TestPaths.NewTempDir();
         Directory.CreateDirectory(Path.Combine(root, "src"));
@@ -417,7 +436,7 @@ public class SyncCommandTests
                     name = "app",
                     solution = solutionPath,
                     output = Path.Combine(root, "out", "app"),
-                    repo,
+                    repo = omitRepo ? null : repo,
                     frontend = withFrontend ? Path.Combine(root, "fe") : null,
                 },
             },

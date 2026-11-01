@@ -35,9 +35,8 @@
     },
     {
       "name": "legacy",
-      "description": "MẪU 3 — solution nằm sâu trong repo, nên phải chỉ rõ \"repo\" để scan-git lấy đúng gốc git",
+      "description": "MẪU 3 — solution nằm sâu trong repo (src/): không cần khoá \"repo\", git tự tìm gốc. Chỉ thêm \"repo\" khi git không tìm được gốc từ thư mục solution",
       "solution": "D:/Repos/Legacy/src/Legacy.sln",
-      "repo": "D:/Repos/Legacy",
       "output": "D:/CodeMapIndex/Legacy",
       "commitLanguage": "en"
     }
