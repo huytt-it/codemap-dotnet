@@ -177,5 +177,5 @@ File đã có server khác thì giữ nguyên, chỉ thêm mục "codemap". File
 - Prompt **cấm AI tự `git clone`** và **không** sửa PowerShell profile hay PATH: bạn kiểm soát source lấy
   từ đâu, và không vướng chính sách của máy công ty. Cách B (gọi thẳng dll) luôn chạy được khi
   `dotnet tool install` bị chặn.
-- Index không tự cập nhật. Xem [README, Phần 4](../README.md#part-4--refreshing-the-index) để biết khi nào
+- Index không tự cập nhật. Xem [README, mục Keeping the index fresh](../README.md#keeping-the-index-fresh) để biết khi nào
   cần quét lại; server MCP tự nạp index mới khi `codemap sync` xong.

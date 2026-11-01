@@ -175,7 +175,7 @@ If you installed with Option B (no install), use `"command": "dotnet"` and put t
 
 **To add nothing to the target repos**, put the entry in VS Code's user-level MCP configuration instead (command **MCP: Open User Configuration**). There, use absolute paths for `--config` and `--workspace` (the folder you open in VS Code), not `${workspaceFolder}`. One entry then covers any number of repos under that folder: if several match, the first call answers `AMBIGUOUS_PROJECT` and the agent retries with `project=<name>`. This is what [SETUP-PROMPT.md](SETUP-PROMPT.md) does.
 
-Then quit VS Code completely, reopen the repo, and ask a question in chat. The server starts after the first message. See [Part 3b of the main README](../README.md#part-3b--let-an-agent-call-codemap-directly-mcp) for the tools it serves and what to expect.
+Then quit VS Code completely, reopen the repo, and ask a question in chat. The server starts after the first message. See [the MCP section of the main README](../README.md#mcp-server-for-vs-code) for the tools it serves and what to expect.
 
 ---
 
