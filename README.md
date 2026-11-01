@@ -215,7 +215,7 @@ Declare each codebase once; every command then takes `--project <name>` instead 
 | `solution` | Yes | The `.sln` or `.slnx` to scan. |
 | `output` | Yes | Output folder. The index goes to `<output>/index`, the overview to `<output>/MAP.md`. |
 | `description` | No | What the codebase is; agents read it for context. |
-| `repo` | No | Git root. Defaults to the solution's folder. **Set it when the solution is not at the repository root** (e.g. `src/App.sln`): `sync` runs `scan-git` only when this folder contains `.git`, so without it the git history is skipped. |
+| `repo` | No | Git root. When omitted, git is asked for the root of the repository that holds the solution (the solution's folder if git cannot answer), so a solution deeper in the repository (`src/App.sln`) needs nothing extra. Set it only when git cannot find the root from the solution's folder. |
 | `frontend` | No | Angular/TypeScript folder. **Omit the key** when there is none: an empty string resolves to the registry's own folder and scans it. |
 | `commitLanguage` | No | Language of commit and ticket text (`ja`, `vi`, `en`…). Agents use it to phrase `where` queries. |
 
@@ -286,7 +286,7 @@ codemap sync --project shop
 codemap sync --all
 ```
 
-`sync` runs `scan` → `scan-git` → `scan-fe` → `link` → `map` for the project (or for every project). It skips `scan-git` when the entry's `repo` folder (by default the solution's folder) has no `.git`, and the frontend steps when there is no `frontend`; `sync-complete.json` and `codemap projects` show which steps were skipped. It builds the new index in a staging folder next to the output and swaps it in only after `scan` and `map` succeed, so a failed run leaves the previous index untouched. The result carries `index/sync-complete.json`, which records when and from which commit it was built and which steps ran or were skipped. `codemap projects` shows each project's index status.
+`sync` runs `scan` → `scan-git` → `scan-fe` → `link` → `map` for the project (or for every project). It skips `scan-git` when there is no git repository (the `repo` folder has no `.git`, or, with `repo` omitted, git finds none around the solution), and the frontend steps when there is no `frontend`; `sync-complete.json` and `codemap projects` show which steps were skipped. It builds the new index in a staging folder next to the output and swaps it in only after `scan` and `map` succeed, so a failed run leaves the previous index untouched. The result carries `index/sync-complete.json`, which records when and from which commit it was built and which steps ran or were skipped. `codemap projects` shows each project's index status.
 
 Nothing is written into the scanned repositories: the scan reads source and runs read-only git commands, and all output goes to `output` (plus a lock file and a staging folder beside it).
 

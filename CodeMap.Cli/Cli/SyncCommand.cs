@@ -70,7 +70,9 @@ internal static class SyncCommand
     {
         var solution = registry.ResolvePath(entry.Solution);
         var outDir = registry.ResolvePath(entry.Output);
-        var repo = registry.RepoOf(entry);
+        // An explicit `repo` is taken as written. Without one, RepoOf falls back to the solution's folder, which for
+        // src/App.sln holds no .git, and scan-git was skipped without a word. Ask git for the root, as the query side does.
+        var repo = entry.Repo != null ? registry.RepoOf(entry) : IndexPathResolver.GitRootOrSelf(registry.RepoOf(entry));
 
         if (!File.Exists(solution))
         {

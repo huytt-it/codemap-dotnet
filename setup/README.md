@@ -44,7 +44,7 @@ Open the file you just created, **delete all three example entries**, and add yo
 | `solution` | Required | The `.sln` or `.slnx` file to scan |
 | `output` | Required | Output directory. **The index lives at `<output>/index`**, `MAP.md` at `<output>/MAP.md` |
 | `description` | — | What this codebase is — an AI agent reads this for context |
-| `repo` | — | Git root. Defaults to the solution's own directory if left blank |
+| `repo` | — | Git root. If left out, git is asked for the root of the repository that holds the solution, so a solution in `src/` needs nothing extra. Set it only when git cannot find the root from the solution's directory |
 | `frontend` | — | Angular/TypeScript directory. **Omit this key entirely** if there is no separate frontend |
 | `commitLanguage` | — | Language the team writes commits in (`ja`/`vi`/`en`/...) — an AI agent reads this to decide which language to use for `where` |
 
